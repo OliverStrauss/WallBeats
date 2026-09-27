@@ -1,18 +1,11 @@
 # Wall-Beats
+An AR based beat maker i thought of on a random thrusday. Uses computer vision to find sticky notes on my wall and make noises accordingly.
+As a warning i have 0 musical background or prowess, so the interface makes sense to me sorry.
+Watch the working demo here: https://youtu.be/X_fnuMzRjMM
 
-A projector and a USB webcam both point at a wall. You stick sticky notes on the
-wall and the wall becomes a beat instrument: balls fall from notes in the top
-band onto the notes below them, in time, and every hit plays the note's pitch.
-
-Plain HTML/JS, no framework, no build step. OpenCV.js (vision), Web Audio
-(sound), `<canvas>` (rendering), `BroadcastChannel` (sync between the two
-windows). OpenCV is vendored in `vendor/`, so it runs offline.
-
-
-
+(Claude generated summary)
 ## How to play
 
-The wall is the instrument; the laptop only watches (and keeps loops).
 
 - **Every note gets a ball.** A lone note's ball drops from the top of the
   wall and climbs back. The ruler lines on the wall show the fall time, 1/8
