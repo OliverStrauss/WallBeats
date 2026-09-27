@@ -1,7 +1,7 @@
 # Wall-Beats
 An AR based beat maker i thought of on a random thrusday. Uses computer vision to find sticky notes on my wall and make noises accordingly.
 As a warning i have 0 musical background or prowess, so the interface makes sense to me sorry.
-Watch the working demo here: https://youtu.be/X_fnuMzRjMM
+Watch the working demo here: (https://www.youtube.com/watch?v=X_fnuMzRjMM)
 
 (Claude generated summary)
 ## How to play
