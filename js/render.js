@@ -30,6 +30,11 @@ export const HALO_PAD = 14; // halo polygon inflation, px at the reference size
 export const HALO_MASK = [8, 32]; // band around a haloed note blanked for vision, px
 export const HIGHLIGHT_MASK = 8; // half-width of the band blanked along the highlight box, px
 export const TOAST_MASK = [640, 100]; // top-right w x h blanked for vision (toasts), px
+// Plinko power animations live in a ring POWER_OUT px past a note's farthest
+// corner; POWER_MASK is the band around that ring blanked for vision, px. Keep
+// it narrower than a note so a note dropped on the ring still shows through.
+export const POWER_OUT = 16;
+export const POWER_MASK = [-8, 42];
 const MONO = 'ui-monospace, Menlo, Consolas, monospace';
 
 export function refScale(w, h) {
@@ -520,7 +525,7 @@ function drawHelp(ctx, w, h) {
 export const GAMES = [
   { id: 'beat', name: 'BEAT WALL', blurb: 'sticky notes make music' },
   { id: 'plinko', name: 'PLINKO', blurb: 'notes are power-ups · beat your best' },
-  { id: 'laser', name: 'LASER', blurb: 'notes are mirrors', keys: '← → or click aim · R restart' },
+  { id: 'laser', name: 'LASER', blurb: 'squares mirror · strips tint', keys: '← → or click aim · Tab level · R restart' },
 ];
 const MENU_COLS = 4;
 const MENU_ROWS = 3;
@@ -656,7 +661,7 @@ function drawPowers(ctx, w, h, scene, p) {
   for (const n of scene.notes || []) {
     const pts = n.corners.map(([x, y]) => [x * w, y * h]);
     const [cx, cy] = centroid(pts);
-    const out = Math.max(...pts.map(([x, y]) => Math.hypot(x - cx, y - cy))) + 16 * s; // ring just off the paper
+    const out = Math.max(...pts.map(([x, y]) => Math.hypot(x - cx, y - cy))) + POWER_OUT * s; // ring just off the paper
     const bx = cx;
     const by = cy - out - 16 * s; // badge above the note
     ctx.strokeStyle = white(0.8);
@@ -735,7 +740,7 @@ function drawPowers(ctx, w, h, scene, p) {
           const u = (t * 0.6 + k / 3) % 1;
           ctx.strokeStyle = white(0.6 * u);
           ctx.beginPath();
-          ctx.arc(cx, cy, out + (1 - u) * 70 * s, 0, Math.PI * 2);
+          ctx.arc(cx, cy, out + (1 - u) * 36 * s, 0, Math.PI * 2); // stays inside POWER_MASK
           ctx.stroke();
         }
         break;
@@ -960,21 +965,51 @@ function circle(ctx, x, y, r) {
 }
 
 const MINI_DRAW = {
+  // Coloured light reads as a note to the camera: beam, locks and target rings
+  // are white with a thin coloured core, and masked for vision (Laser.mask).
   laser(ctx, v, u) {
+    const rgb = (c) => `rgb(${rgbOf(c).join(',')})`;
+    const line = ([a, b]) => {
+      ctx.beginPath();
+      ctx.moveTo(...a);
+      ctx.lineTo(...b);
+      ctx.stroke();
+    };
+    ctx.lineCap = 'round';
     ctx.strokeStyle = white(0.2);
     ctx.lineWidth = 2 * u;
-    ctx.beginPath();
-    ctx.moveTo(0, v.top);
-    ctx.lineTo(v.A, v.top);
-    ctx.stroke();
+    line([[0, v.top], [v.A, v.top]]);
+    ctx.setLineDash([6 * u, 6 * u]);
+    ctx.strokeStyle = white(0.25);
+    for (const [x0, y0, x1, y1] of v.zones) ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.strokeStyle = white(0.8);
+    for (const pts of v.off) {
+      poly(ctx, inflate(pts, HALO_PAD * u));
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.strokeStyle = white(0.7);
+    ctx.lineWidth = 6 * u;
+    for (const w of v.walls) line([w.a, w.b]);
+    for (const l of v.locks) {
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 7 * u;
+      line([l.a, l.b]);
+      ctx.strokeStyle = rgb(l.color);
+      ctx.lineWidth = 3 * u;
+      line([l.a, l.b]);
+    }
     for (const t of v.targets) {
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 3 * u;
       circle(ctx, t.x, t.y, t.r);
       ctx.stroke();
+      ctx.strokeStyle = rgb(t.color);
+      circle(ctx, t.x, t.y, t.r * 0.7);
+      ctx.stroke();
       if (t.lit) {
         ctx.fillStyle = '#fff';
-        circle(ctx, t.x, t.y, t.r * 0.6);
+        circle(ctx, t.x, t.y, t.r * 0.45);
         ctx.fill();
       }
     }
@@ -982,17 +1017,23 @@ const MINI_DRAW = {
     ctx.shadowColor = '#fff';
     ctx.shadowBlur = 12;
     ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 3 * u;
-    ctx.beginPath();
-    v.beam.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-    ctx.stroke();
+    ctx.lineWidth = 4 * u;
+    for (const s of v.beams) line(s.pts);
     ctx.restore();
+    ctx.lineWidth = 1.5 * u;
+    for (const s of v.beams) {
+      if (s.color === 'white') continue;
+      ctx.strokeStyle = rgb(s.color);
+      line(s.pts);
+    }
     ctx.fillStyle = '#fff';
-    ctx.save();
-    ctx.translate(...v.emit);
-    ctx.rotate(v.ang);
-    ctx.fillRect(-14 * u, -8 * u, 24 * u, 16 * u);
-    ctx.restore();
+    for (const e of v.emitters) {
+      ctx.save();
+      ctx.translate(...e.p);
+      ctx.rotate(e.ang);
+      ctx.fillRect(-14 * u, -8 * u, 24 * u, 16 * u);
+      ctx.restore();
+    }
   },
 };
 

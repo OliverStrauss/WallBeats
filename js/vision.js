@@ -64,6 +64,9 @@ export class Detector {
    * @param opts.roi         optional [[x,y] x4] (source px): keep only this quad
    * @param opts.blockers    optional [{a:[x,y], b:[x,y], r}] capsules (source px)
    *                         painted black before cleanup (used for the ball)
+   * @param opts.softBlockers optional capsules (source px) that hide light on its
+   *                         own but never split a note: a blob they cut is kept
+   *                         whole if any of it shows outside them (laser beam)
    */
   process(source, srcW, srcH, params, opts = {}) {
     const cv = this.cv;
@@ -122,21 +125,43 @@ export class Detector {
         cv.fillPoly(roiMask, polys, new cv.Scalar(255));
         cv.bitwise_and(mask, roiMask, mask);
       }
-      for (const b of opts.blockers || []) {
-        const a = new cv.Point(Math.round(b.a[0] * scale), Math.round(b.a[1] * scale));
-        const c = new cv.Point(Math.round(b.b[0] * scale), Math.round(b.b[1] * scale));
-        const r = Math.max(1, Math.round(b.r * scale));
-        cv.circle(mask, a, r, new cv.Scalar(0), -1);
-        cv.circle(mask, c, r, new cv.Scalar(0), -1);
-        cv.line(mask, a, c, new cv.Scalar(0), 2 * r);
-      }
+      const paint = (m, caps) => {
+        for (const b of caps) {
+          const a = new cv.Point(Math.round(b.a[0] * scale), Math.round(b.a[1] * scale));
+          const c = new cv.Point(Math.round(b.b[0] * scale), Math.round(b.b[1] * scale));
+          const r = Math.max(1, Math.round(b.r * scale));
+          cv.circle(m, a, r, new cv.Scalar(0), -1);
+          cv.circle(m, c, r, new cv.Scalar(0), -1);
+          cv.line(m, a, c, new cv.Scalar(0), 2 * r);
+        }
+      };
+      paint(mask, opts.blockers || []);
+      const soft = opts.softBlockers || [];
+      const whole = soft.length ? track(mask.clone()) : null;
+      paint(mask, soft); // with soft blockers, `mask` is now only the seed
 
       // --- Morphology: open removes speckles, close fills small holes.
       const k = Math.max(1, Math.round(params.morph * scale) | 1);
       if (k > 1) {
         const kernel = track(cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(k, k)));
-        cv.morphologyEx(mask, mask, cv.MORPH_OPEN, kernel);
-        cv.morphologyEx(mask, mask, cv.MORPH_CLOSE, kernel);
+        const m = whole ?? mask;
+        cv.morphologyEx(m, m, cv.MORPH_OPEN, kernel);
+        cv.morphologyEx(m, m, cv.MORPH_CLOSE, kernel);
+      }
+
+      // --- Soft blockers: keep each cleaned blob of the unblocked mask that
+      // still shows outside them, whole. The seed skips cleanup, so the thin
+      // halves left of a small note cut by the beam still count. Light alone
+      // sits inside its capsule and goes.
+      if (whole) {
+        const labels = track(new cv.Mat());
+        const n = cv.connectedComponents(whole, labels, 8, cv.CV_32S);
+        const L = labels.data32S;
+        const m = mask.data;
+        const keep = new Uint8Array(n);
+        for (let i = 0; i < m.length; i++) if (m[i]) keep[L[i]] = 1;
+        keep[0] = 0; // background
+        for (let i = 0; i < m.length; i++) m[i] = keep[L[i]] ? 255 : 0;
       }
 
       if (opts.maskCanvas) cv.imshow(opts.maskCanvas, mask);

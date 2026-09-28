@@ -2,7 +2,8 @@
 
 Design for turning the Laser mini game (`js/minigames.js`) from "random targets,
 notes are mirrors" into a colour-light puzzle. Decisions below were agreed on;
-open questions are listed at the end. No code yet.
+open questions are listed at the end. Build steps 1–4 are in `js/minigames.js`
+and `js/laserLevels.js`.
 
 ## 1. Principles
 
@@ -130,7 +131,14 @@ The view's beam changes from one point list to segments: `[{ pts, color }]`.
 
 ## 8. Open questions
 
+Built with these defaults until decided otherwise:
+
 - Does a lit target stop the beam, or does the beam pass through it?
+  *Default: passes through.*
 - Should players need to cut notes for filters, or is there another way to
-  make a strip note (for example, two notes side by side)?
+  make a strip note (for example, two notes side by side)? *Default: cut notes;
+  two notes side by side are two notes.*
 - Is there a scoring or star system (fewest notes), or is solving enough?
+  *Default: solving is enough; the score is the highest level solved.*
+- Ignored notes (no-note zone, over the inventory) absorb the beam rather than
+  let it through, so no light lands on their paper.
