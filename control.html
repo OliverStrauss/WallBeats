@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="css/style.css">
   <script async src="vendor/opencv.js"></script>
 </head>
-<body>
+<body data-mode="menu">
   <div class="topbar">
     <h1>sticky-wall</h1>
     <label>Camera
@@ -50,6 +50,11 @@
           <label><input type="checkbox" id="crossTest"> Crosshair test (move the mouse over the feed; a crosshair should appear at the same spot on the wall)</label>
           <button id="forgetCalib">Forget calibration</button>
         </div>
+      </div>
+      <div class="card menu-only" style="margin-top:14px">
+        <h2>Menu</h2>
+        <div class="row" id="gameButtons"></div>
+        <div class="status">Calibrate and tune the camera here, then pick a game. Note detection is off on the menu, so notes on the wall are ignored until a game starts.</div>
       </div>
       <div class="card" id="calibPanel" style="margin-top:14px" hidden>
         <h2>Calibration</h2>
@@ -98,7 +103,7 @@
           <span class="status" id="layersInfo"></span>
         </div>
       </div>
-      <div class="card" style="margin-top:14px">
+      <div class="card game-only" style="margin-top:14px">
         <h2>Note colours <button id="resetColors" style="float:right;padding:2px 8px">Defaults</button></h2>
         <div class="row" id="colorButtons"></div>
         <div class="status" id="colorMsg"></div>
