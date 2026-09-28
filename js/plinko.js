@@ -24,6 +24,7 @@ const NOTE_E = 1.05; // notes are bumpers: a little extra kick
 const WALL_E = 0.4;
 const SLOT_TOP = 0.86;
 export const NOTE_LINE = 0.76; // notes reaching below this line are ignored (keeps the slots open)
+export const PLINKO_TOP = 0.19; // top band masked out of note detection (HUD text reads as notes); first pegs at 0.22
 const FLOOR = 0.99;
 const TRAIL_S = 0.6; // position history kept per ball (drawing + vision mask)
 const MAX_BALLS = 40;
