@@ -81,6 +81,7 @@ try {
   await sleep(300);
   check((await proj.evaluate(() => window.stickyWall.state.mode)) === 'menu', 'starts on the game menu');
   await proj.screenshot({ path: path.join(OUT, '0-menu-projector.png') });
+  check(await ctl.isVisible('#gameButtons') && !(await ctl.isVisible('#runBtn')) && !(await ctl.isVisible('#lanesTable')), 'menu panel shows on the menu, beat controls hide');
   await ctl.selectOption('#modeSelect', 'beat');
   check((await proj.evaluate(() => window.stickyWall.state.mode)) === 'beat', 'mode select switches the wall to the beat');
 

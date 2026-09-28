@@ -384,6 +384,11 @@ function sendMode() {
 function setMode(mode) {
   if (state.mode === 'beat' && mode !== 'beat' && engine.running) engine.toggle(epochNow());
   state.mode = mode;
+  if (mode === 'menu') {
+    // detection is off on the menu: drop the last frame's outlines and masks
+    state.lastDetect = null;
+    state.blockers = [];
+  }
   if (mode === 'plinko' && !state.plinko) state.plinko = newPlinko();
   if (MINI_GAMES[mode]) miniGame();
   sendMode();
@@ -569,6 +574,13 @@ function gameCapsules() {
 
 for (const g of GAMES) $('modeSelect').add(new Option(g.name[0] + g.name.slice(1).toLowerCase(), g.id));
 $('modeSelect').addEventListener('change', (e) => setMode(e.target.value));
+$('gameButtons').replaceChildren(...GAMES.map((g) => {
+  const b = document.createElement('button');
+  b.textContent = g.name[0] + g.name.slice(1).toLowerCase();
+  b.title = g.blurb;
+  b.addEventListener('click', () => setMode(g.id));
+  return b;
+}));
 
 // Snapshot of the notes and balls a kept layer came from, so the wall keeps
 // showing them (dim) after the notes are taken down.
@@ -1444,7 +1456,8 @@ function distToSegment([x, y], [ax, ay], [bx, by]) {
 }
 
 function detectOnce() {
-  if (!state.detector) return;
+  // The menu is for calibration and setup; finding notes there only gets in the way.
+  if (!state.detector || state.mode === 'menu') return;
   const [w, h] = videoSize();
   if (!w || !h || els.video.readyState < 2) return;
   const calib = activeCalib();
@@ -1602,8 +1615,8 @@ function renderStatus() {
     `Calibrated: ${calibStatus(w, h)}`,
     `Sound:      ${soundReady() ? '<span class="ok">on</span>' : '<span class="warn">off</span> - click anywhere on this page to enable'}`,
     `Mode:       ${state.mode}${state.plinko && state.mode === 'plinko' ? ` · score ${state.plinko.score} · ${state.plinko.balls.length} ball(s)` : ''}`,
-    `Beat:       ${engine.running ? '<span class="ok">running</span>' : 'stopped'} · ${engine.bpm} BPM · ${engine.lanes.length} lane(s)`,
-    `Notes:      ${state.proj.notes.length} in play, ${state.tracker ? state.tracker.tentative().length : 0} pending, ${d ? d.notes.length : 0} detected this frame${els.freezeNotes.checked ? ' <span class="warn">(frozen)</span>' : ''}`,
+    ...(state.mode === 'beat' ? [`Beat:       ${engine.running ? '<span class="ok">running</span>' : 'stopped'} · ${engine.bpm} BPM · ${engine.lanes.length} lane(s)`] : []),
+    state.mode === 'menu' ? 'Notes:      detection off on the menu' : `Notes:      ${state.proj.notes.length} in play, ${state.tracker ? state.tracker.tentative().length : 0} pending, ${d ? d.notes.length : 0} detected this frame${els.freezeNotes.checked ? ' <span class="warn">(frozen)</span>' : ''}`,
   ];
   els.status.innerHTML = lines.join('\n');
 }
