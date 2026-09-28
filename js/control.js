@@ -14,7 +14,7 @@ import { INSTRUMENTS } from './instruments.js';
 import { BeatEngine, epochNow, clockPos, ballY, ghostPos } from './beat.js';
 import { ballRadiusN, ballGapN, refScale, inflate, highlightBox, HALO_MS, HALO_MASK, HALO_PAD, POWER_OUT, POWER_MASK, HIGHLIGHT_MASK, TOAST_MASK, BALL_R, BALL_GAP, gridLevel, GAMES, menuTiles, echoBandH } from './render.js';
 import { keyAction } from './keys.js';
-import { Plinko, NOTE_LINE, inPoly, polyDist } from './plinko.js';
+import { Plinko, NOTE_LINE, PLINKO_TOP, inPoly, polyDist } from './plinko.js';
 import { MINI_GAMES } from './minigames.js';
 
 const $ = (id) => document.getElementById(id);
@@ -1414,6 +1414,11 @@ function uiCapsules() {
     // HUD and banner text: under a colour cast, white text reads as a note
     out.push({ a: [0, 60 * sc], b: [w, 60 * sc], r: 60 * sc });
     if (state.proj.game?.banner) out.push({ a: [w / 2 - 300 * sc, 0.3 * h + 20 * sc], b: [w / 2 + 300 * sc, 0.3 * h + 20 * sc], r: 50 * sc });
+  }
+  if (state.mode === 'plinko') {
+    // whole top band (HUD, banner, dropper) down to just above the first peg row
+    const r = PLINKO_TOP * h / 2;
+    out.push({ a: [-r, r], b: [w + r, r], r });
   }
   const note = state.proj.notes.find((n) => n.id === (state.focus ?? state.highlight));
   if (note && state.mode === 'beat') {
