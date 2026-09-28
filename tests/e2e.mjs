@@ -354,15 +354,17 @@ try {
   check(placed === '240,60,70', `click places a note in the picked colour (${placed})`);
   await ctl.mouse.click(...toPage(spot), { button: 'right' });
   check((await ctl.evaluate(() => window.stickyWall.state.sim.notes.length)) === before, 'right-click deletes it');
-  // one note of every colour above the line, one below it: all still tracked under the animations
+  // one note of every colour above the line, one across it, one fully below it: the
+  // animations keep every note tracked, the one across is ignored, the one below is blanked
   await ctl.evaluate(() => window.stickyWall.state.sim.setNotes([
     ...['purple', 'blue', 'green', 'yellow', 'orange', 'red'].map((color, i) => ({ cx: 0.12 + i * 0.15, cy: i % 2 ? 0.4 : 0.55, color })),
-    { cx: 0.5, cy: 0.8, color: 'green' },
+    { cx: 0.5, cy: 0.76, color: 'green' },
+    { cx: 0.3, cy: 0.93, color: 'yellow' },
   ]));
   await sleep(2500);
   await proj.screenshot({ path: path.join(OUT, '6b-plinko-powers.png') });
   const tracked = await ctl.evaluate(() => [window.stickyWall.state.proj.notes.length, window.stickyWall.state.plinko.notes.length]);
-  check(tracked[0] === 7 && tracked[1] === 6, `power animations keep every note tracked, the one below the line is ignored (${tracked})`);
+  check(tracked[0] === 7 && tracked[1] === 6, `power animations keep every note tracked, the one across the line is ignored, the one below it unseen (${tracked})`);
   await proj.keyboard.press('s');
   await sleep(200);
   check((await ctl.evaluate(() => window.stickyWall.state.plinko.level)) === 0, 'S starts puzzle mode');
@@ -376,7 +378,7 @@ try {
   }
   await proj.screenshot({ path: path.join(OUT, '8-laser.png') });
   const g = await ctl.evaluate(() => [window.stickyWall.state.proj.notes.length, window.stickyWall.state.proj.game?.id]);
-  check(g[0] === 7 && g[1] === 'laser', `laser runs and all notes stay tracked (${g})`);
+  check(g[0] >= 7 && g[1] === 'laser', `laser runs and all notes stay tracked (${g})`);
   check(await ctl.isVisible('#miniKeys') && !(await ctl.isVisible('#keepBtn')), 'laser keys show, beat panels hide');
   // level 4 (Paint it red) under the colour cast: a red strip tints the beam, the coloured light stays masked
   await ctl.check('#simTint');

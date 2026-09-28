@@ -12,9 +12,9 @@ import { buildLanes, noteAt, laneLabel } from './lanes.js';
 import { InstrumentRing } from './ring.js';
 import { INSTRUMENTS } from './instruments.js';
 import { BeatEngine, epochNow, clockPos, ballY, ghostPos } from './beat.js';
-import { ballRadiusN, ballGapN, refScale, inflate, highlightBox, HALO_MS, HALO_MASK, HIGHLIGHT_MASK, TOAST_MASK, BALL_R, BALL_GAP, gridLevel, GAMES, menuTiles, echoBandH } from './render.js';
+import { ballRadiusN, ballGapN, refScale, inflate, highlightBox, HALO_MS, HALO_MASK, HALO_PAD, POWER_OUT, POWER_MASK, HIGHLIGHT_MASK, TOAST_MASK, BALL_R, BALL_GAP, gridLevel, GAMES, menuTiles, echoBandH } from './render.js';
 import { keyAction } from './keys.js';
-import { Plinko } from './plinko.js';
+import { Plinko, NOTE_LINE, inPoly, polyDist } from './plinko.js';
 import { MINI_GAMES } from './minigames.js';
 
 const $ = (id) => document.getElementById(id);
@@ -1307,6 +1307,58 @@ function plinkoCapsules() {
   const star = p.starAt();
   // ponytail: masks the star where it is now; add its recent path if lag ever makes it show up as a note
   if (star) out.push({ a: [(star[0] / p.A) * w, star[1] * h], b: [(star[0] / p.A) * w, star[1] * h], r: R * 2.5 });
+  return [...out, ...plinkoSoftCapsules()];
+}
+
+// Soft capsules (never cut a note, see vision.js softBlockers) over the rest of
+// Plinko's light: everything below the no-notes line (slots, landed balls, the
+// line's label), the power animation ring around each note, the ignored-note
+// outline and hint, and the rising popups.
+function plinkoSoftCapsules() {
+  const p = state.plinko;
+  const { w, h } = state.proj;
+  const s = refScale(w, h);
+  const out = [];
+  // rows across the full width from the dashed line down, small r so the camera
+  // mapping stays accurate under perspective; plus the label right-aligned above the line
+  const r = 20 * s;
+  const lineY = NOTE_LINE * h;
+  for (let y = lineY - 4 * s + r; y < h + r; y += 1.5 * r) out.push({ a: [0, y], b: [w, y], r, soft: true });
+  out.push({ a: [w - 200 * s, lineY - 12 * s], b: [w - 16 * s, lineY - 12 * s], r: 10 * s, soft: true });
+  const [lo, hi] = POWER_MASK;
+  for (const n of state.proj.notes) {
+    const pts = n.corners.map(([x, y]) => [x * w, y * h]);
+    if (n.corners.some(([, y]) => y > NOTE_LINE)) {
+      // ignored note: dashed outline and "✕ move above the line" to its right (see render.js drawPowers)
+      const ring = inflate(pts, HALO_PAD * s);
+      ring.forEach((a, i) => out.push({ a, b: ring[(i + 1) % ring.length], r: 4 * s, soft: true }));
+      const [cx, cy] = centroid(pts);
+      const x0 = cx + Math.max(...pts.map(([x, y]) => Math.hypot(x - cx, y - cy))) + POWER_OUT * s;
+      out.push({ a: [x0, cy], b: [x0 + 200 * s, cy], r: 12 * s, soft: true });
+      continue;
+    }
+    const [cx, cy] = centroid(pts);
+    const R0 = Math.max(...pts.map(([x, y]) => Math.hypot(x - cx, y - cy))) + (POWER_OUT + (lo + hi) / 2) * s;
+    const N = 24;
+    const rr = ((hi - lo) / 2) * s;
+    // ponytail: skips the ring over known neighbours (a small note fully inside it would vanish);
+    // a new note dropped inside another's ring is still hidden until the ring moves off it
+    const others = state.proj.notes.filter((o) => o !== n).map((o) => o.corners.map(([x, y]) => [x * w, y * h]));
+    for (let i = 0; i < N; i++) {
+      const [a0, a1] = [(i / N) * Math.PI * 2, ((i + 1) / N) * Math.PI * 2];
+      const a = [cx + R0 * Math.cos(a0), cy + R0 * Math.sin(a0)];
+      const b = [cx + R0 * Math.cos(a1), cy + R0 * Math.sin(a1)];
+      const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      if (others.some((o) => inPoly(mid, o) || polyDist(mid, o) < rr + Math.hypot(b[0] - a[0], b[1] - a[1]))) continue;
+      out.push({ a, b, r: rr, soft: true });
+    }
+  }
+  // popups: bold mono up to 36 px, text centred on (x, y - age * 0.06)
+  for (const pop of p.popups) {
+    const y = (pop.y - (p.t - pop.t) * 0.06) * h;
+    const half = pop.text.length * 11 * s;
+    out.push({ a: [pop.x * w - half, y], b: [pop.x * w + half, y], r: 24 * s, soft: true });
+  }
   return out;
 }
 

@@ -30,6 +30,11 @@ export const HALO_PAD = 14; // halo polygon inflation, px at the reference size
 export const HALO_MASK = [8, 32]; // band around a haloed note blanked for vision, px
 export const HIGHLIGHT_MASK = 8; // half-width of the band blanked along the highlight box, px
 export const TOAST_MASK = [640, 100]; // top-right w x h blanked for vision (toasts), px
+// Plinko power animations live in a ring POWER_OUT px past a note's farthest
+// corner; POWER_MASK is the band around that ring blanked for vision, px. Keep
+// it narrower than a note so a note dropped on the ring still shows through.
+export const POWER_OUT = 16;
+export const POWER_MASK = [-8, 42];
 const MONO = 'ui-monospace, Menlo, Consolas, monospace';
 
 export function refScale(w, h) {
@@ -656,7 +661,7 @@ function drawPowers(ctx, w, h, scene, p) {
   for (const n of scene.notes || []) {
     const pts = n.corners.map(([x, y]) => [x * w, y * h]);
     const [cx, cy] = centroid(pts);
-    const out = Math.max(...pts.map(([x, y]) => Math.hypot(x - cx, y - cy))) + 16 * s; // ring just off the paper
+    const out = Math.max(...pts.map(([x, y]) => Math.hypot(x - cx, y - cy))) + POWER_OUT * s; // ring just off the paper
     const bx = cx;
     const by = cy - out - 16 * s; // badge above the note
     ctx.strokeStyle = white(0.8);
@@ -735,7 +740,7 @@ function drawPowers(ctx, w, h, scene, p) {
           const u = (t * 0.6 + k / 3) % 1;
           ctx.strokeStyle = white(0.6 * u);
           ctx.beginPath();
-          ctx.arc(cx, cy, out + (1 - u) * 70 * s, 0, Math.PI * 2);
+          ctx.arc(cx, cy, out + (1 - u) * 36 * s, 0, Math.PI * 2); // stays inside POWER_MASK
           ctx.stroke();
         }
         break;
