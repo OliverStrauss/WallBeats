@@ -204,7 +204,9 @@ class Laser extends Game {
     for (const e of this.lv.emitters) if (e.aim) e.ang = clamp(Math.atan2(y - e.p[1], x - e.p[0]), -1.4, 1.4);
   }
 
-  press() {} // no game over
+  press() {
+    this.hidden = !this.hidden; // Space: laser off so vision sees the notes clean
+  }
 
   tab(d) {
     this.level = clamp(this.level + d, 0, LASER_LEVELS.length - 1);
@@ -292,6 +294,7 @@ class Laser extends Game {
   /** Vision mask over the coloured light: beam, emitters, target rings, locks. */
   mask() {
     // soft: a note dropped across the beam is still seen whole (vision.js softBlockers)
+    if (this.hidden) return []; // Space: no light, no blocking
     const out = this.beams.map((s) => ({ a: s.pts[0], b: s.pts[1], r: 0.007, soft: true })); // × ballPad: covers the glow; soft, so it may reach into a note
     for (const e of this.lv.emitters) {
       const [c, si] = [Math.cos(e.ang), Math.sin(e.ang)];
@@ -306,13 +309,14 @@ class Laser extends Game {
     const lv = this.lv;
     const last = this.level === LASER_LEVELS.length - 1;
     const off = this.notes.filter((n) => n.off);
+    const hide = (a) => (this.hidden ? [] : a); // Space: only walls and zones stay up
     return {
       top: TOP,
-      emitters: lv.emitters.map((e) => ({ p: e.p, ang: e.ang, aim: e.aim })),
-      beams: this.beams,
-      targets: lv.targets.map((t) => ({ x: t.p[0], y: t.p[1], r: TARGET_R, color: t.color, lit: t.lit })),
+      emitters: hide(lv.emitters).map((e) => ({ p: e.p, ang: e.ang, aim: e.aim })),
+      beams: hide(this.beams),
+      targets: hide(lv.targets).map((t) => ({ x: t.p[0], y: t.p[1], r: TARGET_R, color: t.color, lit: t.lit })),
       walls: lv.walls,
-      locks: lv.locks.map(({ a, b, color }) => ({ a, b, color })),
+      locks: hide(lv.locks).map(({ a, b, color }) => ({ a, b, color })),
       zones: lv.noNotes,
       off: off.map((n) => n.pts),
       info: `LEVEL ${this.level + 1}/${LASER_LEVELS.length} · ${lv.name.toUpperCase()} · ${lv.hint}${this.usage ? ` · ${this.usage}` : ''}${off.length ? ` · IGNORED: ${off[0].off}` : ''}`,
