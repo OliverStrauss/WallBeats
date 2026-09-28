@@ -342,8 +342,31 @@ try {
   await proj.screenshot({ path: path.join(OUT, '6-plinko-projector.png') });
   await sleep(3500);
   const pk = await ctl.evaluate(() => ({ score: window.stickyWall.state.plinko.score, dropped: window.stickyWall.state.plinko.dropped, notes: window.stickyWall.state.proj.notes.length }));
-  check(pk.dropped === 5 && pk.score >= 5, `plinko balls drop and score (${pk.dropped} dropped, score ${pk.score})`);
+  check(pk.dropped === 5 && pk.score !== 0, `plinko balls drop and score (${pk.dropped} dropped, score ${pk.score})`); // skull can make it negative
   check(pk.notes === 0, `plinko balls are never detected as notes (${pk.notes})`);
+  check(!(await ctl.isVisible('#keepBtn')) && (await ctl.isVisible('.plinko-only')), 'beat panels hide in plinko, plinko keys show');
+  // sim wall: pick red, click an empty spot to place it, right-click it to delete it
+  const before = await ctl.evaluate(() => window.stickyWall.state.sim.notes.length);
+  await ctl.click('.sim-color:last-child');
+  const spot = await ctl.evaluate(() => window.stickyWall.state.sim.projToCam([0.5, 0.15]));
+  await ctl.mouse.click(...toPage(spot));
+  const placed = await ctl.evaluate(() => window.stickyWall.state.sim.notes.at(-1).color.join());
+  check(placed === '240,60,70', `click places a note in the picked colour (${placed})`);
+  await ctl.mouse.click(...toPage(spot), { button: 'right' });
+  check((await ctl.evaluate(() => window.stickyWall.state.sim.notes.length)) === before, 'right-click deletes it');
+  // one note of every colour above the line, one below it: all still tracked under the animations
+  await ctl.evaluate(() => window.stickyWall.state.sim.setNotes([
+    ...['purple', 'blue', 'green', 'yellow', 'orange', 'red'].map((color, i) => ({ cx: 0.12 + i * 0.15, cy: i % 2 ? 0.4 : 0.55, color })),
+    { cx: 0.5, cy: 0.8, color: 'green' },
+  ]));
+  await sleep(2500);
+  await proj.screenshot({ path: path.join(OUT, '6b-plinko-powers.png') });
+  const tracked = await ctl.evaluate(() => [window.stickyWall.state.proj.notes.length, window.stickyWall.state.plinko.notes.length]);
+  check(tracked[0] === 7 && tracked[1] === 6, `power animations keep every note tracked, the one below the line is ignored (${tracked})`);
+  await proj.keyboard.press('s');
+  await sleep(200);
+  check((await ctl.evaluate(() => window.stickyWall.state.plinko.level)) === 0, 'S starts puzzle mode');
+  await proj.screenshot({ path: path.join(OUT, '7-plinko-puzzle.png') });
 
   check(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 } finally {

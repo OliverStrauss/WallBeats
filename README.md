@@ -13,8 +13,15 @@ window. **M** (either window) returns to the menu.
 
 - **Beat wall**: the sticky-note beat instrument described below.
 - **Plinko**: **← →** aim, **Space** (or a click on the wall) drops a ball,
-  **R** resets the score. Sticky notes become bouncy bumpers that play their
-  pitch; pegs under a note are removed so no light lands on the paper.
+  **R** starts a new round. A round is 10 balls; the best round shows on the
+  menu tile. The ★ slot scores ×5 and the ☠ slot −50; both move after the
+  bonus scores and every 8 s. Touch the drifting star for +50. Sticky notes
+  are bumpers that play their pitch, and their colour is a power-up:
+  red boosts the ball along the edge it hits · blue warps it to the next blue
+  note · green splits it into 3 · yellow doubles its score · purple pulls
+  nearby balls in · orange holds it for 1 s. **S** switches to puzzle mode:
+  a fixed drop point, a goal slot and a note limit (**Tab** skips a level).
+  Everything projected is white, so the camera never mistakes it for a note.
   Physics lives in `js/plinko.js` and runs in the control window.
 
 To add a game: add it to `GAMES` in `js/render.js`, draw it in `drawScene`,

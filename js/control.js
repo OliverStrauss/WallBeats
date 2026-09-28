@@ -368,8 +368,9 @@ function runAction(a) {
 // stops its clock so it doesn't keep playing under another game.
 
 function sendMode() {
+  document.body.dataset.mode = state.mode;
   state.proj.mode = state.mode;
-  state.proj.menu = { index: state.menuIndex };
+  state.proj.menu = { index: state.menuIndex, best: { plinko: state.plinko?.best ?? loadBest() } };
   channel.send('mode', { mode: state.mode, menu: state.proj.menu });
   $('modeSelect').value = state.mode;
 }
@@ -398,9 +399,26 @@ function menuAction(a) {
 // Physics runs here (this window owns sound and the vision mask); the
 // projector draws each step's view().
 
+// Best Plinko round, kept across sessions (shown on the menu tile).
+const BEST_KEY = 'stickyWall.plinkoBest';
+function loadBest() {
+  try {
+    return Number(localStorage.getItem(BEST_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
+function saveBest(v) {
+  try {
+    localStorage.setItem(BEST_KEY, String(v));
+  } catch {
+    // private window: best lives for this session only
+  }
+}
+
 function newPlinko() {
   const { w, h } = state.proj;
-  const p = new Plinko({ aspect: w / h, ballR: ballRadiusN(w, h), gap: ballGapN(w, h) });
+  const p = new Plinko({ aspect: w / h, ballR: ballRadiusN(w, h), gap: ballGapN(w, h), best: Math.max(loadBest(), state.plinko?.best ?? 0) });
   p.setNotes(state.proj.notes);
   return p;
 }
@@ -418,19 +436,25 @@ function plinkoAction(a) {
       p.setAim(p.aim + a.arg * p.slotW * 0.25);
       break;
     case 'reset':
-      p.reset();
-      toast(a.cap, 'Plinko reset');
+      if (p.level != null) p.setLevel(p.level);
+      else p.reset();
+      toast(a.cap, p.level != null ? `Puzzle ${p.level + 1} restart` : 'New round');
+      break;
+    case 'snap':
+      p.setLevel(p.level == null ? 0 : null);
+      toast(a.cap, p.level != null ? 'Puzzle mode' : 'Score mode');
+      break;
+    case 'lane':
+      if (p.level != null) {
+        p.setLevel(p.level + a.arg);
+        toast(a.cap, `Puzzle ${p.level + 1}`);
+      }
       break;
     default:
   }
 }
 
-// Pentatonic by position: pegs on the left are low, on the right high.
-function plinkoFreq(x) {
-  const i = Math.max(0, Math.min(17, Math.floor(x * 18)));
-  return NOTE_COLORS[i % 6].freq * 2 ** Math.floor(i / 6 - 1);
-}
-
+const PEG_FREQ = 1046.5; // every peg plays the same C6 tick
 let plinkoLast = performance.now();
 let pegSoundAt = 0;
 function plinkoTick() {
@@ -443,17 +467,20 @@ function plinkoTick() {
     const v = Math.min(1, e.speed / 1.5);
     if (e.kind === 'peg' && t - pegSoundAt > 25) {
       pegSoundAt = t; // ponytail: global peg-sound throttle; per-peg voices if it sounds thin
-      playNote('pluck', plinkoFreq(e.x), 0.2 + 0.5 * v);
+      playNote('pluck', PEG_FREQ, 0.2 + 0.5 * v);
     } else if (e.kind === 'note') {
       playNote(engine.instrumentOf(e.noteId), freqOf(e.color) ?? freqOf('purple'), 0.4 + 0.6 * v);
       state.halos.push({ noteId: e.noteId, color: e.color, at: now });
       channel.send('hitFx', { noteId: e.noteId, color: e.color, at: now });
-    } else if (e.kind === 'slot') {
-      const big = e.value >= 25;
+    } else if (e.kind === 'slot' && e.skull) {
+      [196, 164.81, 130.81].forEach((f, i) => playNote('bass', f, 0.8, now + 0.09 * i));
+    } else if (e.kind === 'slot' || e.kind === 'star') {
+      const big = e.value >= 25 || e.bonus || e.kind === 'star';
       playNote('marimba', 523.25, 0.8);
       if (big) [659.25, 783.99, 1046.5].forEach((f, i) => playNote('bell', f, 0.7, now + 0.07 * (i + 1)));
     }
   }
+  if (state.plinko.best > loadBest()) saveBest(state.plinko.best);
   state.proj.plinko = state.plinko.view();
   channel.send('plinko', state.proj.plinko);
 }
@@ -865,7 +892,20 @@ navigator.mediaDevices?.addEventListener?.('devicechange', () => refreshCameraLi
 
 // ---------------------------------------------------------------- simulated wall panel
 
-$('simAdd').addEventListener('click', () => state.sim?.addNote());
+// Colour swatches for placing notes on the simulated wall.
+let simColor = NOTE_COLORS[0].name;
+for (const c of NOTE_COLORS) {
+  const b = document.createElement('button');
+  b.className = `sim-color${c.name === simColor ? ' on' : ''}`;
+  b.title = `${c.name} (${c.pitch})`;
+  b.style.background = `rgb(${c.rgb})`;
+  b.addEventListener('click', () => {
+    simColor = c.name;
+    document.querySelectorAll('.sim-color').forEach((el) => el.classList.toggle('on', el === b));
+  });
+  $('simColors').append(b);
+}
+$('simAdd').addEventListener('click', () => state.sim?.addNote(simColor));
 $('simRemove').addEventListener('click', () => state.sim?.removeNote());
 $('simShuffle').addEventListener('click', () => state.sim?.shuffle());
 $('simNoise').addEventListener('change', (e) => { if (state.sim) state.sim.noise = e.target.checked; });
@@ -907,10 +947,18 @@ els.feed.addEventListener('pointerdown', (ev) => {
     if (calibDrag >= 0) els.feed.setPointerCapture(ev.pointerId);
     return;
   }
-  if (state.sim) {
+  if (state.sim && ev.button === 0) {
     simDrag = state.sim.noteIndexAtCam(p);
     if (simDrag >= 0) els.feed.setPointerCapture(ev.pointerId);
+    else state.sim.addNote(simColor, p); // empty spot: place a note there
   }
+});
+
+// Right-click a note on the simulated wall to delete it.
+els.feed.addEventListener('contextmenu', (ev) => {
+  if (!state.sim) return;
+  ev.preventDefault();
+  state.sim.removeNote(state.sim.noteIndexAtCam(feedPoint(ev)));
 });
 
 els.feed.addEventListener('pointermove', (ev) => {
@@ -1160,6 +1208,9 @@ function plinkoCapsules() {
     pts.push([(b.x / p.A) * w, b.y * h]);
     for (let i = 0; i < pts.length; i += 3) out.push({ a: pts[i], b: pts[Math.min(i + 3, pts.length - 1)], r: R });
   }
+  const star = p.starAt();
+  // ponytail: masks the star where it is now; add its recent path if lag ever makes it show up as a note
+  if (star) out.push({ a: [(star[0] / p.A) * w, star[1] * h], b: [(star[0] / p.A) * w, star[1] * h], r: R * 2.5 });
   return out;
 }
 

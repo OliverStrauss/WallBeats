@@ -147,14 +147,18 @@ export class SimCamera {
     this.dirty = true;
   }
 
-  addNote() {
-    const i = this.notes.length;
-    this.notes.push(makeNote(0.15 + Math.random() * 0.7, 0.15 + Math.random() * 0.7, (Math.random() - 0.5) * 40, i));
+  /** Adds a note of colour `name` (default: next colour) at camPt (default: random spot). */
+  addNote(name, camPt) {
+    const i = name ? NOTE_COLORS.findIndex((c) => c.name === name) : this.notes.length;
+    const [x, y] = camPt ? this.camToProj(camPt) : [0.15 + Math.random() * 0.7, 0.15 + Math.random() * 0.7];
+    this.notes.push(makeNote(x, y, camPt ? 0 : (Math.random() - 0.5) * 40, i));
     this.dirty = true;
   }
 
-  removeNote() {
-    this.notes.pop();
+  /** Removes note i (default: the last one added). */
+  removeNote(i = this.notes.length - 1) {
+    if (i < 0) return;
+    this.notes.splice(i, 1);
     this.dirty = true;
   }
 

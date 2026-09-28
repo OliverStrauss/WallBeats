@@ -516,7 +516,7 @@ function drawHelp(ctx, w, h) {
 
 export const GAMES = [
   { id: 'beat', name: 'BEAT WALL', blurb: 'sticky notes make music' },
-  { id: 'plinko', name: 'PLINKO', blurb: 'drop balls, notes are bumpers' },
+  { id: 'plinko', name: 'PLINKO', blurb: 'notes are power-ups · beat your best' },
 ];
 const MENU_COLS = 4;
 const MENU_ROWS = 3;
@@ -568,7 +568,8 @@ function drawMenu(ctx, w, h, scene) {
     ctx.fillText(game.name, x + tw / 2, y + th * 0.78);
     ctx.fillStyle = white(0.5);
     ctx.font = `${Math.round(12 * s)}px ${MONO}`;
-    ctx.fillText(game.blurb, x + tw / 2, y + th * 0.9);
+    const best = scene.menu?.best?.[game.id];
+    ctx.fillText(best ? `${game.blurb} · BEST ${best}` : game.blurb, x + tw / 2, y + th * 0.9);
   });
   // bottom bar: big clock like the Wii, hint underneath
   const d = new Date(scene.now * 1000);
@@ -611,6 +612,150 @@ function drawGameIcon(ctx, id, cx, cy, R, now) {
 }
 
 // ---------------------------------------------------------------- plinko
+
+// The no-notes line, and an animation around each note showing its power.
+// Everything stays outside the paper (light on a note changes its colour to
+// the camera) and white (coloured light is a note to the camera).
+function drawPowers(ctx, w, h, scene, p) {
+  const s = refScale(w, h);
+  const t = scene.now;
+  const lineY = p.noteLine * h;
+  ctx.save();
+  ctx.strokeStyle = white(0.35);
+  ctx.lineWidth = 2 * s;
+  ctx.setLineDash([10 * s, 8 * s]);
+  ctx.beginPath();
+  ctx.moveTo(0, lineY);
+  ctx.lineTo(w, lineY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = white(0.45);
+  ctx.font = `${Math.round(12 * s)}px ${MONO}`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('no notes below this line', w - 16 * s, lineY - 6 * s);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const n of scene.notes || []) {
+    const pts = n.corners.map(([x, y]) => [x * w, y * h]);
+    const [cx, cy] = centroid(pts);
+    const out = Math.max(...pts.map(([x, y]) => Math.hypot(x - cx, y - cy))) + 16 * s; // ring just off the paper
+    const bx = cx;
+    const by = cy - out - 16 * s; // badge above the note
+    ctx.strokeStyle = white(0.8);
+    ctx.fillStyle = white(0.8);
+    ctx.lineWidth = 2 * s;
+    if (n.corners.some(([, y]) => y > p.noteLine)) {
+      // ignored: dashed outline and a hint
+      ctx.setLineDash([6 * s, 6 * s]);
+      poly(ctx, inflate(pts, HALO_PAD * s));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.textAlign = 'left';
+      ctx.fillText('✕ move above the line', cx + out, cy);
+      ctx.textAlign = 'center';
+      continue;
+    }
+    switch (n.color) {
+      case 'blue': // portal: three arms swirling in towards the note
+        for (let k = 0; k < 3; k++) {
+          const a0 = t * 2.5 + (k * Math.PI * 2) / 3;
+          ctx.beginPath();
+          for (let u = 0; u <= 1.001; u += 0.1) {
+            const a = a0 + u * 2;
+            const r = out + (1 - u) * 26 * s;
+            ctx.lineTo(cx + r * Math.cos(a), cy + r * Math.sin(a));
+          }
+          ctx.stroke();
+        }
+        break;
+      case 'yellow': // star badge, twinkling sparkles on the ring
+        star(ctx, bx, by, 12 * s * (1 + 0.15 * Math.sin(t * 5)), t * 0.8);
+        ctx.fill();
+        for (let k = 0; k < 4; k++) {
+          const a = t * 0.7 + (k * Math.PI) / 2;
+          const tw = 0.5 + 0.5 * Math.sin(t * 6 + k * 2);
+          star(ctx, cx + out * Math.cos(a), cy + out * Math.sin(a), 5 * s * tw, 0);
+          ctx.fill();
+        }
+        break;
+      case 'green': { // split: one stem into three branches, dots racing up them
+        const L = 14 * s;
+        ctx.beginPath();
+        ctx.moveTo(bx, by + L);
+        ctx.lineTo(bx, by);
+        for (const dx of [-1, 0, 1]) {
+          ctx.moveTo(bx, by);
+          ctx.lineTo(bx + dx * L, by - L);
+        }
+        ctx.stroke();
+        const u = (t * 1.2) % 1;
+        for (const dx of [-1, 0, 1]) {
+          ctx.beginPath();
+          ctx.arc(bx + dx * L * u, by - L * u, 2.5 * s, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        break;
+      }
+      case 'red': // boost: chevrons shooting outwards off all four sides
+        for (let k = 0; k < 4; k++) {
+          const a = (k * Math.PI) / 2;
+          const u = (t * 1.5 + k * 0.25) % 1;
+          const r = out + u * 22 * s;
+          const [ux, uy] = [Math.cos(a), Math.sin(a)];
+          const [x, y] = [cx + ux * r, cy + uy * r];
+          const c = 7 * s;
+          ctx.strokeStyle = white(0.9 * (1 - u));
+          ctx.beginPath();
+          ctx.moveTo(x - ux * c - uy * c, y - uy * c + ux * c);
+          ctx.lineTo(x, y);
+          ctx.lineTo(x - ux * c + uy * c, y - uy * c - ux * c);
+          ctx.stroke();
+        }
+        break;
+      case 'purple': // magnet: field rings closing in on the note
+        for (let k = 0; k < 3; k++) {
+          const u = (t * 0.6 + k / 3) % 1;
+          ctx.strokeStyle = white(0.6 * u);
+          ctx.beginPath();
+          ctx.arc(cx, cy, out + (1 - u) * 70 * s, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        break;
+      case 'orange': { // sticky: goo dripping off the bottom, a hold timer badge
+        const bottom = Math.max(...pts.map(([, y]) => y)) + 10 * s;
+        for (let k = 0; k < 3; k++) {
+          const u = (t * 0.7 + k / 3) % 1;
+          ctx.fillStyle = white(0.8 * (1 - u));
+          ctx.beginPath();
+          ctx.arc(cx + (k - 1) * out * 0.45, bottom + u * 30 * s, 3.5 * s * (1 - 0.4 * u), 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.beginPath();
+        ctx.arc(bx, by, 10 * s, 0, Math.PI * 2);
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx + 7 * s * Math.cos(t * 3), by + 7 * s * Math.sin(t * 3));
+        ctx.stroke();
+        break;
+      }
+      default:
+    }
+  }
+  ctx.restore();
+}
+
+/** Five-point star path centred on (x, y), outer radius R, turned by `a`. */
+function star(ctx, x, y, R, a) {
+  ctx.beginPath();
+  for (let k = 0; k < 10; k++) {
+    const b = -Math.PI / 2 + (k * Math.PI) / 5 + a;
+    const r = k % 2 ? R * 0.45 : R;
+    ctx.lineTo(x + r * Math.cos(b), y + r * Math.sin(b));
+  }
+  ctx.closePath();
+}
 
 function drawPlinko(ctx, w, h, scene) {
   const p = scene.plinko;
@@ -658,18 +803,35 @@ function drawPlinko(ctx, w, h, scene) {
   const n = p.slots.length;
   const sw = w / n;
   const flash = new Array(n).fill(0);
-  for (const pop of p.popups) flash[Math.min(n - 1, Math.floor(pop.x * n))] = Math.max(flash[Math.floor(pop.x * n)] || 0, 1 - pop.age / 0.6);
+  for (const pop of p.popups) if (pop.slot != null) flash[pop.slot] = Math.max(flash[pop.slot], 1 - pop.age / 0.6);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  const pulse = 0.5 + 0.5 * Math.sin(scene.now * 6);
+  const target = p.puzzle ? p.puzzle.slot : p.bonus;
+  const midY = ((p.slotTop + p.floor) / 2) * h;
   for (let i = 0; i < n; i++) {
+    const sh = (p.floor - p.slotTop) * h;
+    // bonus / puzzle target pulses; the bar drains until the bonus moves. White
+    // only: a coloured block of light is a sticky note to the camera.
+    if (i === target) {
+      ctx.fillStyle = white(0.1 + 0.12 * pulse);
+      ctx.fillRect(i * sw, p.slotTop * h, sw, sh);
+      ctx.fillStyle = '#fff';
+      if (i === p.bonus) ctx.fillRect(i * sw, p.slotTop * h, sw * p.bonusLeft, 4 * s);
+    }
     if (flash[i] > 0) {
       ctx.fillStyle = white(0.18 * flash[i]);
-      ctx.fillRect(i * sw, p.slotTop * h, sw, (p.floor - p.slotTop) * h);
+      ctx.fillRect(i * sw, p.slotTop * h, sw, sh);
     }
     const big = p.slots[i] >= 25;
-    ctx.fillStyle = white(big ? 0.9 : 0.5);
-    ctx.font = `${big ? 'bold ' : ''}${Math.round((big ? 22 : 17) * s)}px ${MONO}`;
-    ctx.fillText(String(p.slots[i]), (i + 0.5) * sw, ((p.slotTop + p.floor) / 2) * h);
+    let label = p.puzzle ? '' : String(p.slots[i]);
+    if (i === p.bonus) label = `★ ${p.slots[i]}×${p.bonusX}`;
+    if (i === p.skull) label = `☠ ${p.skullValue}`;
+    if (p.puzzle && i === target) label = '★ GOAL';
+    const hot = i === target || i === p.skull;
+    ctx.fillStyle = hot ? '#fff' : white(big ? 0.9 : 0.5); // coloured text reads as a note to the camera
+    ctx.font = `${big || hot ? 'bold ' : ''}${Math.round((big || hot ? 22 : 17) * s)}px ${MONO}`;
+    ctx.fillText(label, (i + 0.5) * sw, midY);
   }
   ctx.strokeStyle = white(0.5);
   ctx.lineWidth = 3 * s;
@@ -683,6 +845,19 @@ function drawPlinko(ctx, w, h, scene) {
   ctx.stroke();
 
   drawHalos(ctx, w, h, scene, new Map((scene.notes || []).map((nt) => [nt.id, nt])));
+  drawPowers(ctx, w, h, scene, p);
+
+  // drifting star: touch it for points (white, so the camera never takes it for a note)
+  if (p.star) {
+    const R = p.star.r * h;
+    ctx.save();
+    ctx.shadowColor = '#fff';
+    ctx.shadowBlur = (14 + 10 * pulse) * s;
+    ctx.fillStyle = '#fff';
+    star(ctx, p.star.x * w, p.star.y * h, R, scene.now);
+    ctx.fill();
+    ctx.restore();
+  }
 
   // balls with a fading trail
   for (const b of p.balls) {
@@ -696,11 +871,24 @@ function drawPlinko(ctx, w, h, scene) {
     ctx.save();
     ctx.shadowColor = '#fff';
     ctx.shadowBlur = 24 * s;
-    ctx.fillStyle = white(b.a);
+    // gold once a yellow note doubled it; an orange-held ball shows its countdown ring
+    ctx.fillStyle = b.mult > 1 ? `rgba(255,216,74,${b.a})` : white(b.a);
     ctx.beginPath();
     ctx.arc(b.x * w, b.y * h, br, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+    if (b.stuck > 0) {
+      ctx.strokeStyle = '#ffa040';
+      ctx.lineWidth = 2 * s;
+      ctx.beginPath();
+      ctx.arc(b.x * w, b.y * h, br + 5 * s, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * b.stuck);
+      ctx.stroke();
+    }
+    if (b.mult > 1) {
+      ctx.fillStyle = '#000';
+      ctx.font = `bold ${Math.round(br * 1.1)}px ${MONO}`;
+      ctx.fillText(`${b.mult}`, b.x * w, b.y * h);
+    }
   }
 
   // "+25" popups rising out of the slot
@@ -715,14 +903,34 @@ function drawPlinko(ctx, w, h, scene) {
   ctx.textBaseline = 'top';
   ctx.fillStyle = white(0.55);
   ctx.font = `${Math.round(13 * s)}px ${MONO}`;
-  ctx.fillText('PLINKO · SCORE', 24 * s, 20 * s);
+  ctx.fillText(p.puzzle ? 'PLINKO · PUZZLE' : 'PLINKO · SCORE', 24 * s, 20 * s);
   ctx.fillStyle = '#fff';
   ctx.font = `bold ${Math.round(40 * s)}px ${MONO}`;
-  ctx.fillText(String(p.score), 24 * s, 38 * s);
+  ctx.fillText(p.puzzle ? `${p.puzzle.n}/${p.puzzle.of}` : String(p.score), 24 * s, 38 * s);
   ctx.fillStyle = white(0.55);
   ctx.font = `${Math.round(13 * s)}px ${MONO}`;
-  ctx.fillText(`BALLS ${p.dropped}${p.dropped ? ` · AVG ${(p.score / p.dropped).toFixed(1)}` : ''}`, 24 * s, 84 * s);
+  if (p.puzzle) {
+    const z = p.puzzle;
+    ctx.fillText(`PUZZLE ${z.n}/${z.of} · NOTES ${z.notes}/${z.max} · ${z.hint}`, 24 * s, 84 * s);
+  } else {
+    ctx.fillText(`BALLS LEFT ${p.left} · BEST ${p.best}`, 24 * s, 84 * s);
+  }
   ctx.fillStyle = white(0.4);
-  ctx.fillText('← → aim · SPACE drop · R reset · M menu', 24 * s, 104 * s);
+  ctx.fillText(p.puzzle ? 'SPACE drop · Tab next level · R restart · S score mode · M menu' : '← → aim · SPACE drop · R new round · S puzzles · M menu', 24 * s, 104 * s);
+  ctx.fillText('red boost · blue warp · green split · yellow ×2 · purple magnet · orange sticky', 24 * s, 124 * s);
+
+  // round over / solved banner, text only up by the dropper
+  const banner = p.over ? [`ROUND OVER · ${p.score}`, p.score >= p.best && p.score > 0 ? 'NEW BEST!' : `BEST ${p.best} · SPACE or R to play again`] : p.puzzle?.solved ? ['SOLVED!', 'next level…'] : null;
+  if (banner) {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.round(56 * s)}px ${MONO}`;
+    ctx.fillText(banner[0], w / 2, 0.12 * h);
+    ctx.fillStyle = white(0.8);
+    ctx.font = `${Math.round(18 * s)}px ${MONO}`;
+    ctx.fillText(banner[1], w / 2, 0.12 * h + 44 * s);
+  }
   ctx.restore();
 }
+

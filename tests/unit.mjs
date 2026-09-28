@@ -9,7 +9,7 @@ import { NOTE_COLORS, classifyColor } from '../js/colors.js';
 import { buildLanes, spanAt, rateLabel, noteAt, oneWay, laneLabel } from '../js/lanes.js';
 import { InstrumentRing } from '../js/ring.js';
 import { INSTRUMENTS } from '../js/instruments.js';
-import { Plinko, SLOT_VALUES } from '../js/plinko.js';
+import { Plinko, SLOT_VALUES, LEVELS } from '../js/plinko.js';
 import { BeatEngine, ballProgress, ballY, clockPos, ghostPos, ballShown } from '../js/beat.js';
 
 const require = createRequire(import.meta.url);
@@ -689,20 +689,98 @@ test('snapToDot: no contrast -> null', () => {
 
 test('plinko: every dropped ball lands in a slot and scores once', () => {
   const p = new Plinko({ aspect: 16 / 9 });
-  for (let i = 0; i < 12; i++) p.drop(0.1 + (i * 1.6) / 12);
+  for (let i = 0; i < 10; i++) p.drop(0.1 + (i * 1.6) / 10);
   let slots = 0;
   for (let i = 0; i < 60 * 10; i++) slots += p.step(1 / 60).filter((e) => e.kind === 'slot').length;
-  assert.equal(slots, 12);
-  assert.ok(p.score >= 12 * Math.min(...SLOT_VALUES) && p.score <= 12 * Math.max(...SLOT_VALUES));
+  assert.equal(slots, 10);
   assert.equal(p.balls.length, 0, 'resting balls fade out');
 });
 
-test('plinko: no straight channel - every x meets a peg within two rows', () => {
+test('plinko: 10-ball rounds, bonus x5, skull, best kept', () => {
+  const p = new Plinko({ aspect: 16 / 9, best: 3 });
+  assert.equal(p.bonus === p.skull, false);
+  const bonusX = (p.bonus + 0.5) * p.slotW;
+  p.balls.push(p.ball(bonusX, 0.9, 0, 0.5)); // straight into the bonus slot
+  const ev = p.step(0.1).find((e) => e.kind === 'slot');
+  assert.equal(ev.bonus, true);
+  assert.equal(ev.value, SLOT_VALUES[ev.slot] * 5);
+  assert.notEqual(p.bonus, ev.slot, 'bonus moves after it scores');
+  const skullX = (p.skull + 0.5) * p.slotW;
+  p.balls.push(p.ball(skullX, 0.9, 0, 0.5));
+  assert.equal(p.step(0.1).find((e) => e.kind === 'slot').value, -50);
+  let drops = 0;
+  while (p.drop()) drops++;
+  assert.equal(drops, 10);
+  for (let i = 0; i < 60 * 12 && !p.over; i++) p.step(1 / 60);
+  assert.ok(p.over, 'round ends when the last ball lands');
+  assert.equal(p.best, Math.max(3, p.score));
+  p.drop(); // Space after the round starts a new one
+  assert.equal(p.left, 10);
+  assert.equal(p.score, 0);
+});
+
+test('plinko: note powers - warp, split, x2, sticky', () => {
   const p = new Plinko({ aspect: 16 / 9 });
-  const rows = [...new Set(p.pegs.map((q) => q.y))].slice(0, 2);
-  for (let x = 0.05; x < p.A - 0.05; x += 0.002) {
-    assert.ok(p.pegs.some((q) => rows.includes(q.y) && Math.abs(q.x - x) < 0.007 + p.r), `open channel at x=${x.toFixed(3)}`);
+  p.left = Infinity;
+  p.star.off = Infinity; // keep the star out of the scores
+  const note = (id, color, x, y) => ({ id, color, corners: square(x / p.A, y, 0.04) });
+  // blue at left warps to blue at right; ball dropped on the left ends up right
+  p.setNotes([note(1, 'blue', 0.3, 0.4), note(2, 'blue', 1.5, 0.4)]);
+  p.drop(0.3);
+  let warp = false;
+  let maxX = 0;
+  for (let i = 0; i < 300; i++) {
+    warp ||= p.step(1 / 60).some((e) => e.power === 'warp');
+    for (const b of p.balls) maxX = Math.max(maxX, b.x);
   }
+  assert.ok(warp && maxX > 1.3, `ball warped (max x ${maxX.toFixed(2)})`);
+  // green splits into 3, each split ball can not split again
+  p.reset();
+  p.left = Infinity;
+  p.setNotes([note(3, 'green', 0.9, 0.4)]);
+  p.drop(0.9);
+  let n = 0;
+  for (let i = 0; i < 90; i++) {
+    p.step(1 / 60);
+    n = Math.max(n, p.balls.length);
+  }
+  assert.equal(n, 3);
+  // yellow doubles, orange holds ~1 s
+  p.reset();
+  p.left = Infinity;
+  p.setNotes([note(4, 'yellow', 0.5, 0.4), note(5, 'orange', 1.3, 0.4)]);
+  p.drop(0.5);
+  p.drop(1.3);
+  let held = 0;
+  for (let i = 0; i < 120; i++) {
+    p.step(1 / 60);
+    if (p.balls[1]?.stuck > 0) held++;
+  }
+  assert.equal(p.balls[0].mult, 2);
+  assert.ok(held > 50 && held < 65, `sticky held ${held} frames`);
+});
+
+test('plinko: notes reaching below the line are ignored, pegs still cleared', () => {
+  const p = new Plinko({ aspect: 16 / 9 });
+  p.setNotes([{ id: 1, color: 'red', corners: square(0.5, 0.5) }, { id: 2, color: 'red', corners: square(0.3, 0.6, 0.2) }]);
+  assert.deepEqual(p.notes.map((n) => n.id), [1]);
+  assert.ok(p.pegs.every((q) => !(Math.abs(q.x / p.A - 0.3) < 0.2 && Math.abs(q.y - 0.6) < 0.2)), 'no peg under the ignored note');
+});
+
+test('plinko: puzzle mode fixes the drop, counts notes, advances when solved', () => {
+  const p = new Plinko({ aspect: 16 / 9 });
+  p.setLevel(0);
+  assert.equal(p.view().bonus, null);
+  p.setNotes([{ id: 1, color: 'red', corners: square(0.2, 0.5) }, { id: 2, color: 'red', corners: square(0.8, 0.5) }]);
+  assert.equal(p.drop(), false, 'too many notes');
+  p.setNotes([]);
+  p.setAim(0);
+  assert.equal(p.aim, LEVELS[0].x * p.A, 'aim locked');
+  const x = (LEVELS[0].slot + 0.5) * p.slotW;
+  p.balls.push(p.ball(x, 0.9, 0, 0.5));
+  assert.ok(p.step(0.1).some((e) => e.kind === 'slot' && e.bonus));
+  for (let i = 0; i < 100; i++) p.step(1 / 60);
+  assert.equal(p.level, 1);
 });
 
 test('plinko: a note removes pegs under it and balls never touch its paper', () => {
