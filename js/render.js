@@ -57,9 +57,10 @@ const white = (a) => `rgba(255,255,255,${a})`;
  * @param scene.echo      'echo' message or null
  * @param scene.toast     { key, text, at } or null
  * @param scene.now       s, epoch clock (see beat.js epochNow)
- * @param scene.mode      'menu' | 'beat' | 'plinko' (missing = beat)
+ * @param scene.mode      'menu' | 'beat' | 'plinko' | a mini game id (missing = beat)
  * @param scene.menu      { index } selected menu tile
  * @param scene.plinko    Plinko.view() (see plinko.js)
+ * @param scene.game      { id, ...view() } of the mini game on (see minigames.js)
  */
 export function drawScene(ctx, w, h, scene) {
   ctx.save();
@@ -82,6 +83,8 @@ export function drawScene(ctx, w, h, scene) {
     drawMenu(ctx, w, h, scene);
   } else if (scene.mode === 'plinko') {
     if (scene.plinko) drawPlinko(ctx, w, h, scene);
+  } else if (MINI_DRAW[scene.mode]) {
+    if (scene.game?.id === scene.mode) drawMini(ctx, w, h, scene);
   } else if (scene.beat) {
     drawBeat(ctx, w, h, scene);
   }
@@ -517,6 +520,7 @@ function drawHelp(ctx, w, h) {
 export const GAMES = [
   { id: 'beat', name: 'BEAT WALL', blurb: 'sticky notes make music' },
   { id: 'plinko', name: 'PLINKO', blurb: 'notes are power-ups · beat your best' },
+  { id: 'laser', name: 'LASER', blurb: 'notes are mirrors', keys: '← → or click aim · R restart' },
 ];
 const MENU_COLS = 4;
 const MENU_ROWS = 3;
@@ -606,6 +610,17 @@ function drawGameIcon(ctx, id, cx, cy, R, now) {
     const t = (now * 0.6) % 1;
     ctx.beginPath();
     ctx.arc(cx + Math.sin(t * Math.PI * 4) * R * 0.2, cy - R * 0.9 + t * R * 1.8, R * 0.12, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (id === 'laser') {
+    // beam bouncing off a mirror into a target
+    ctx.beginPath();
+    ctx.moveTo(cx - R, cy + R * 0.3);
+    ctx.lineTo(cx, cy - R * 0.5);
+    ctx.lineTo(cx + R, cy + R * 0.3);
+    ctx.stroke();
+    ctx.fillRect(cx - R * 0.15, cy - R * 0.72, R * 0.3, R * 0.12);
+    ctx.beginPath();
+    ctx.arc(cx + R * 0.9, cy + R * 0.3, R * 0.1, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();
@@ -934,3 +949,95 @@ function drawPlinko(ctx, w, h, scene) {
   ctx.restore();
 }
 
+// ---------------------------------------------------------------- mini games
+// Views come in world units (y 0..1 of the height, x 0..aspect), so the game is
+// drawn under ctx.scale(h, h); `u` is one reference px in world units. White only, and every note is
+// blacked out afterwards so no light lands on the paper.
+
+function circle(ctx, x, y, r) {
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+}
+
+const MINI_DRAW = {
+  laser(ctx, v, u) {
+    ctx.strokeStyle = white(0.2);
+    ctx.lineWidth = 2 * u;
+    ctx.beginPath();
+    ctx.moveTo(0, v.top);
+    ctx.lineTo(v.A, v.top);
+    ctx.stroke();
+    for (const t of v.targets) {
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 3 * u;
+      circle(ctx, t.x, t.y, t.r);
+      ctx.stroke();
+      if (t.lit) {
+        ctx.fillStyle = '#fff';
+        circle(ctx, t.x, t.y, t.r * 0.6);
+        ctx.fill();
+      }
+    }
+    ctx.save();
+    ctx.shadowColor = '#fff';
+    ctx.shadowBlur = 12;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 3 * u;
+    ctx.beginPath();
+    v.beam.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = '#fff';
+    ctx.save();
+    ctx.translate(...v.emit);
+    ctx.rotate(v.ang);
+    ctx.fillRect(-14 * u, -8 * u, 24 * u, 16 * u);
+    ctx.restore();
+  },
+};
+
+function drawMini(ctx, w, h, scene) {
+  const v = scene.game;
+  const s = refScale(w, h);
+  const game = GAMES.find((g) => g.id === v.id);
+  ctx.save();
+  ctx.scale(h, h);
+  MINI_DRAW[v.id](ctx, v, s / h);
+  ctx.restore();
+
+  // no light on the paper: black out each note and a margin round it
+  ctx.fillStyle = '#000';
+  for (const n of scene.notes || []) {
+    poly(ctx, inflate(n.corners.map(([x, y]) => [x * w, y * h]), BALL_GAP * s));
+    ctx.fill();
+  }
+  drawHalos(ctx, w, h, scene, new Map((scene.notes || []).map((n) => [n.id, n])));
+
+  // HUD like Plinko: name, big score, info, keys (top-right is the toast)
+  ctx.save();
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = white(0.55);
+  ctx.font = `${Math.round(13 * s)}px ${MONO}`;
+  ctx.fillText(game.name, 24 * s, 20 * s);
+  ctx.fillStyle = '#fff';
+  ctx.font = `bold ${Math.round(40 * s)}px ${MONO}`;
+  ctx.fillText(String(v.score), 24 * s, 38 * s);
+  ctx.fillStyle = white(0.55);
+  ctx.font = `${Math.round(13 * s)}px ${MONO}`;
+  ctx.fillText(v.info ?? `BEST ${v.best}`, 24 * s, 84 * s);
+  ctx.fillStyle = white(0.4);
+  ctx.fillText(`${game.keys} · M menu`, 24 * s, 104 * s);
+  const banner = v.banner ?? (v.over ? [`GAME OVER · ${v.score}`, v.score >= v.best && v.score > 0 ? 'NEW BEST!' : 'SPACE or R to play again'] : null);
+  if (banner) {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.round(56 * s)}px ${MONO}`;
+    ctx.fillText(banner[0], w / 2, 0.3 * h);
+    ctx.fillStyle = white(0.8);
+    ctx.font = `${Math.round(18 * s)}px ${MONO}`;
+    ctx.fillText(banner[1], w / 2, 0.3 * h + 44 * s);
+  }
+  ctx.restore();
+}

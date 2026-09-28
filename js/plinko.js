@@ -392,7 +392,7 @@ export class Plinko {
 
 // Circle b vs capsule a-c of combined radius R: push out, bounce with
 // restitution e. Returns the normal impact speed (0 if no contact).
-function collide(b, a, c, R, e) {
+export function collide(b, a, c, R, e) {
   const [qx, qy] = closest([b.x, b.y], a, c);
   const dx = b.x - qx;
   const dy = b.y - qy;
@@ -410,7 +410,7 @@ function collide(b, a, c, R, e) {
   return -vn;
 }
 
-function centre(pts) {
+export function centre(pts) {
   return [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
 }
 
@@ -420,7 +420,7 @@ function wall(b, axis, at, dir) {
   if (b[v] * dir < 0) b[v] *= -WALL_E;
 }
 
-function closest([x, y], [ax, ay], [bx, by]) {
+export function closest([x, y], [ax, ay], [bx, by]) {
   const dx = bx - ax;
   const dy = by - ay;
   const L = dx * dx + dy * dy;
@@ -428,14 +428,14 @@ function closest([x, y], [ax, ay], [bx, by]) {
   return [ax + t * dx, ay + t * dy];
 }
 
-function polyDist(p, pts) {
+export function polyDist(p, pts) {
   return Math.min(...pts.map((a, i) => {
     const q = closest(p, a, pts[(i + 1) % pts.length]);
     return Math.hypot(p[0] - q[0], p[1] - q[1]);
   }));
 }
 
-function inPoly([x, y], pts) {
+export function inPoly([x, y], pts) {
   let inside = false;
   for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
     const [xi, yi] = pts[i];

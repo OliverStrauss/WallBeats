@@ -17,8 +17,6 @@
     <label>Game
       <select id="modeSelect" title="Or press M for the menu on the wall">
         <option value="menu">Menu</option>
-        <option value="beat">Beat wall</option>
-        <option value="plinko">Plinko</option>
       </select>
     </label>
     <span class="spacer"></span>
@@ -45,6 +43,7 @@
           <canvas class="magnifier" id="magnifier" width="140" height="140"></canvas>
         </div>
         <div class="status plinko-only" style="margin:6px 0">Plinko keys: ← → aim · Space drop · R new round · S puzzle mode · Tab next puzzle · M menu</div>
+        <div class="status mini-only" style="margin:6px 0" id="miniKeys"></div>
         <div class="status music" style="margin:6px 0">Keys (this window or the projector): Space start/stop · [ ] tempo · S snap · Tab lane · B/⇧B ball · A/D nudge · E instrument · K/X/Z keep/clear/undo · 1–6 mute (⇧ solo) · R reset · ? help on the wall</div>
         <div class="row">
           <label><input type="checkbox" id="crossTest"> Crosshair test (move the mouse over the feed; a crosshair should appear at the same spot on the wall)</label>

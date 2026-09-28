@@ -25,6 +25,7 @@ const state = {
   mode: 'menu',
   menu: { index: 0 },
   plinko: null,
+  game: null,
   halos: [], // [{ noteId, color, at }]
   hitLog: [], // epoch s when each halo started (tests)
   lastControl: 0,
@@ -63,6 +64,9 @@ function onMessage(msg) {
       break;
     case 'plinko':
       state.plinko = msg;
+      break;
+    case 'game':
+      state.game = msg;
       break;
     case 'toast':
       state.toast = { key: msg.key, text: msg.text, at: epochNow() };
@@ -162,6 +166,7 @@ function frame() {
     mode: state.mode,
     menu: state.menu,
     plinko: state.plinko,
+    game: state.game,
     now: epochNow(),
   });
   requestAnimationFrame(frame);

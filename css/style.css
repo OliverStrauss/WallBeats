@@ -120,6 +120,7 @@ canvas.echo { display: block; width: 100%; height: auto; background: #000; borde
 .banner[hidden] { display: none; }
 /* beat-wall controls hide in Plinko; Plinko help shows only there (body data-mode set by control.js) */
 body[data-mode="plinko"] .music, body:not([data-mode="plinko"]) .plinko-only { display: none !important; }
+body[data-mode="mini"] .music, body:not([data-mode="mini"]) .mini-only { display: none !important; }
 .sim-color { width: 22px; height: 22px; padding: 0; border-radius: 4px; border: 2px solid transparent; }
 .sim-color.on { border-color: #fff; }
 

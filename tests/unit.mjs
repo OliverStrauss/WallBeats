@@ -10,6 +10,7 @@ import { buildLanes, spanAt, rateLabel, noteAt, oneWay, laneLabel } from '../js/
 import { InstrumentRing } from '../js/ring.js';
 import { INSTRUMENTS } from '../js/instruments.js';
 import { Plinko, SLOT_VALUES, LEVELS } from '../js/plinko.js';
+import { MINI_GAMES, raySeg } from '../js/minigames.js';
 import { BeatEngine, ballProgress, ballY, clockPos, ghostPos, ballShown } from '../js/beat.js';
 
 const require = createRequire(import.meta.url);
@@ -815,6 +816,22 @@ function loadOpenCV() {
   }
   return cvPromise;
 }
+
+// ------------------------------------------------------------------ mini games
+
+test('laser: reflects off a note to light a target', () => {
+  const A = 16 / 9;
+  assert.equal(raySeg([0, 0], [1, 0], [1, -1], [1, 1]), 1);
+  assert.equal(raySeg([0, 0], [-1, 0], [1, -1], [1, 1]), Infinity);
+  const g = new MINI_GAMES.laser({ aspect: A });
+  g.ang = 0; // flat along y = 0.55 into the upper-left 45° edge of a diamond: the beam goes straight up
+  const diamond = [[0, -0.07], [0.07, 0], [0, 0.07], [-0.07, 0]].map(([x, y]) => [0.5 + x / A, 0.57 + y]); // square in world units
+  g.setNotes([{ id: 1, color: 'green', corners: diamond }]);
+  g.targets = [{ p: [0.5 * A - 0.05, 0.3], lit: false }];
+  g.step(1 / 60);
+  assert.ok(g.targets[0].lit, 'target above the mirror is lit');
+  assert.equal(g.score, 1);
+});
 
 for (const { name, fn } of tests) {
   try {

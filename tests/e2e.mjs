@@ -368,6 +368,17 @@ try {
   check((await ctl.evaluate(() => window.stickyWall.state.plinko.level)) === 0, 'S starts puzzle mode');
   await proj.screenshot({ path: path.join(OUT, '7-plinko-puzzle.png') });
 
+  console.log('laser');
+  await ctl.selectOption('#modeSelect', 'laser');
+  for (const k of ['ArrowLeft', 'ArrowRight', 'ArrowRight']) {
+    await proj.keyboard.press(k);
+    await sleep(250);
+  }
+  await proj.screenshot({ path: path.join(OUT, '8-laser.png') });
+  const g = await ctl.evaluate(() => [window.stickyWall.state.proj.notes.length, window.stickyWall.state.proj.game?.id]);
+  check(g[0] === 7 && g[1] === 'laser', `laser runs and all notes stay tracked (${g})`);
+  check(await ctl.isVisible('#miniKeys') && !(await ctl.isVisible('#keepBtn')), 'laser keys show, beat panels hide');
+
   check(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 } finally {
   await browser.close();

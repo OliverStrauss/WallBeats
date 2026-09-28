@@ -15,6 +15,7 @@ import { BeatEngine, epochNow, clockPos, ballY, ghostPos } from './beat.js';
 import { ballRadiusN, ballGapN, refScale, inflate, highlightBox, HALO_MS, HALO_MASK, HIGHLIGHT_MASK, TOAST_MASK, BALL_R, BALL_GAP, gridLevel, GAMES, menuTiles, echoBandH } from './render.js';
 import { keyAction } from './keys.js';
 import { Plinko } from './plinko.js';
+import { MINI_GAMES } from './minigames.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -73,6 +74,7 @@ const state = {
   mode: 'menu', // 'menu' | 'beat' | 'plinko'
   menuIndex: 0,
   plinko: null, // Plinko, built when the game starts (needs the projector aspect)
+  games: {}, // { id: mini game } built on first play (see minigames.js)
   // Mirror of what the projector is showing (drives the simulated camera).
   proj: {
     w: 1920,
@@ -125,6 +127,7 @@ function onMessage(msg) {
   state.proj.w = msg.w;
   state.proj.h = msg.h;
   if (state.plinko && Math.abs(state.plinko.A - msg.w / msg.h) > 0.01) state.plinko = newPlinko();
+  if (Object.values(state.games).some((g) => Math.abs(g.A - msg.w / msg.h) > 0.01)) state.games = {};
 }
 
 // ---------------------------------------------------------------- beat engine
@@ -250,6 +253,7 @@ function runAction(a) {
   if (a.action === 'menu') return setMode('menu');
   if (state.mode === 'menu') return menuAction(a);
   if (state.mode === 'plinko') return plinkoAction(a);
+  if (MINI_GAMES[state.mode]) return gameAction(a);
   const now = epochNow();
   const lane = engine.lane(state.highlight);
   const colorName = (c) => `${c} (${pitchOf(c)})`;
@@ -368,9 +372,11 @@ function runAction(a) {
 // stops its clock so it doesn't keep playing under another game.
 
 function sendMode() {
-  document.body.dataset.mode = state.mode;
+  document.body.dataset.mode = MINI_GAMES[state.mode] ? 'mini' : state.mode;
   state.proj.mode = state.mode;
-  state.proj.menu = { index: state.menuIndex, best: { plinko: state.plinko?.best ?? loadBest() } };
+  const best = Object.fromEntries(Object.keys(MINI_GAMES).map((id) => [id, state.games[id]?.best ?? loadBest(bestKey(id))]));
+  state.proj.menu = { index: state.menuIndex, best: { ...best, plinko: state.plinko?.best ?? loadBest() } };
+  if (MINI_GAMES[state.mode]) $('miniKeys').textContent = `${GAMES.find((g) => g.id === state.mode).keys} · M menu`;
   channel.send('mode', { mode: state.mode, menu: state.proj.menu });
   $('modeSelect').value = state.mode;
 }
@@ -379,6 +385,7 @@ function setMode(mode) {
   if (state.mode === 'beat' && mode !== 'beat' && engine.running) engine.toggle(epochNow());
   state.mode = mode;
   if (mode === 'plinko' && !state.plinko) state.plinko = newPlinko();
+  if (MINI_GAMES[mode]) miniGame();
   sendMode();
   sendBeat();
   toast('M', mode === 'menu' ? 'Menu' : GAMES.find((g) => g.id === mode).name);
@@ -401,16 +408,16 @@ function menuAction(a) {
 
 // Best Plinko round, kept across sessions (shown on the menu tile).
 const BEST_KEY = 'stickyWall.plinkoBest';
-function loadBest() {
+function loadBest(key = BEST_KEY) {
   try {
-    return Number(localStorage.getItem(BEST_KEY)) || 0;
+    return Number(localStorage.getItem(key)) || 0;
   } catch {
     return 0;
   }
 }
-function saveBest(v) {
+function saveBest(v, key = BEST_KEY) {
   try {
-    localStorage.setItem(BEST_KEY, String(v));
+    localStorage.setItem(key, String(v));
   } catch {
     // private window: best lives for this session only
   }
@@ -487,6 +494,77 @@ function plinkoTick() {
 // ponytail: 60 Hz setInterval on the control window; move physics into the projector if it stutters
 setInterval(plinkoTick, 1000 / 60);
 
+// ---------------------------------------------------------------- mini games
+// Same deal as Plinko: logic here, the projector draws view() from 'game'.
+
+const bestKey = (id) => `stickyWall.best.${id}`;
+
+/** The mini game on the wall, built on first use. */
+function miniGame() {
+  const id = state.mode;
+  if (!MINI_GAMES[id]) return null;
+  if (!state.games[id]) {
+    const { w, h } = state.proj;
+    state.games[id] = new MINI_GAMES[id]({ aspect: w / h, best: loadBest(bestKey(id)) });
+    state.games[id].setNotes(state.proj.notes);
+  }
+  return state.games[id];
+}
+
+function gameAction(a) {
+  const g = miniGame();
+  switch (a.action) {
+    case 'spin':
+    case 'nudge':
+      g.move(a.arg);
+      break;
+    case 'toggleRun':
+    case 'ringCommit':
+    case 'addBall':
+      g.press();
+      break;
+    case 'mute':
+    case 'solo':
+      g.color(a.arg);
+      break;
+    case 'reset':
+      g.reset();
+      toast(a.cap, 'Restart');
+      break;
+    default:
+  }
+}
+
+let gameLast = performance.now();
+function gameTick() {
+  const t = performance.now();
+  const dt = (t - gameLast) / 1000;
+  gameLast = t;
+  const g = miniGame();
+  if (!g) return;
+  const now = epochNow();
+  for (const e of g.step(dt)) {
+    playNote(e.noteId != null ? engine.instrumentOf(e.noteId) : e.inst, e.f, e.v, now + e.delay);
+    if (e.noteId != null) {
+      state.halos.push({ noteId: e.noteId, color: e.color, at: now });
+      channel.send('hitFx', { noteId: e.noteId, color: e.color, at: now });
+    }
+  }
+  if (g.best !== loadBest(bestKey(state.mode))) saveBest(g.best, bestKey(state.mode));
+  state.proj.game = { id: state.mode, ...g.view() };
+  channel.send('game', state.proj.game);
+}
+setInterval(gameTick, 1000 / 60);
+
+// Mask capsules of the game's moving light, world units -> projector px.
+function gameCapsules() {
+  const g = miniGame();
+  if (!g) return [];
+  const { h } = state.proj;
+  return g.mask().map(({ a, b, r }) => ({ a: [a[0] * h, a[1] * h], b: [b[0] * h, b[1] * h], r: r * h * state.settings.ballPad }));
+}
+
+for (const g of GAMES) $('modeSelect').add(new Option(g.name[0] + g.name.slice(1).toLowerCase(), g.id));
 $('modeSelect').addEventListener('change', (e) => setMode(e.target.value));
 
 // Snapshot of the notes and balls a kept layer came from, so the wall keeps
@@ -549,6 +627,11 @@ function clickWall(pt) {
   }
   if (state.mode === 'plinko') {
     state.plinko.drop(pt[0] * state.plinko.A);
+    return;
+  }
+  const g = miniGame();
+  if (g) {
+    g.click(pt[0] * g.A, pt[1]);
     return;
   }
   if (ring.isOpen) {
@@ -1154,6 +1237,7 @@ function publishNotes(raw) {
   state.proj.notes = notes;
   channel.send('notes', { notes });
   state.plinko?.setNotes(notes);
+  for (const g of Object.values(state.games)) g.setNotes(notes);
   rebuildLanes();
 }
 
@@ -1215,7 +1299,7 @@ function plinkoCapsules() {
 }
 
 function ballMask() {
-  return state.mode === 'beat' ? ballCapsules() : state.mode === 'plinko' ? plinkoCapsules() : [];
+  return state.mode === 'beat' ? ballCapsules() : state.mode === 'plinko' ? plinkoCapsules() : gameCapsules();
 }
 
 // Capsules along the edges of each hit halo (note-coloured light around a note

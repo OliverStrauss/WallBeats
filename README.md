@@ -24,8 +24,14 @@ window. **M** (either window) returns to the menu.
   Everything projected is white, so the camera never mistakes it for a note.
   Physics lives in `js/plinko.js` and runs in the control window.
 
-To add a game: add it to `GAMES` in `js/render.js`, draw it in `drawScene`,
-and route its keys in `runAction` in `js/control.js`.
+- **Laser**: ← → or a click on the wall aims the beam. Sticky notes are
+  mirrors: place them to bounce the beam through every target. Each level adds
+  a target (up to 5). **R** restarts. Logic lives in `js/minigames.js`.
+
+To add a mini game: add a `Game` subclass to `MINI_GAMES` in `js/minigames.js`,
+an entry to `GAMES` and a draw function to `MINI_DRAW` in `js/render.js`.
+Anything else: add it to `GAMES`, draw it in `drawScene`, and route its keys in
+`runAction` in `js/control.js`.
 
 ## How to play
 
