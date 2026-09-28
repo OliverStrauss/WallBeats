@@ -8,6 +8,8 @@
 const V_FLOOR = 25; // adaptive mode: below this the camera is just noise
 const BG_W = 96; // wall-colour estimate is computed at this width...
 const BG_K = 41; // ...with this median kernel (~40% of the frame width)
+const SEED_HUE = 0.4; // rad: under a soft blocker, a blob keeps pixels this close to its seed's hue...
+const SEED_SAT = 50; // ...or this pale (0..255): paper washed out by the beam, whose hue means nothing
 
 export class Detector {
   constructor(cv) {
@@ -125,14 +127,14 @@ export class Detector {
         cv.fillPoly(roiMask, polys, new cv.Scalar(255));
         cv.bitwise_and(mask, roiMask, mask);
       }
-      const paint = (m, caps) => {
+      const paint = (m, caps, v = 0) => {
         for (const b of caps) {
           const a = new cv.Point(Math.round(b.a[0] * scale), Math.round(b.a[1] * scale));
           const c = new cv.Point(Math.round(b.b[0] * scale), Math.round(b.b[1] * scale));
           const r = Math.max(1, Math.round(b.r * scale));
-          cv.circle(m, a, r, new cv.Scalar(0), -1);
-          cv.circle(m, c, r, new cv.Scalar(0), -1);
-          cv.line(m, a, c, new cv.Scalar(0), 2 * r);
+          cv.circle(m, a, r, new cv.Scalar(v), -1);
+          cv.circle(m, c, r, new cv.Scalar(v), -1);
+          cv.line(m, a, c, new cv.Scalar(v), 2 * r);
         }
       };
       paint(mask, opts.blockers || []);
@@ -150,18 +152,35 @@ export class Detector {
       }
 
       // --- Soft blockers: keep each cleaned blob of the unblocked mask that
-      // still shows outside them, whole. The seed skips cleanup, so the thin
-      // halves left of a small note cut by the beam still count. Light alone
-      // sits inside its capsule and goes.
+      // still shows outside them. The seed skips cleanup, so the thin halves
+      // left of a small note cut by the beam still count. Light alone sits
+      // inside its capsule and goes. Inside a capsule a blob only gets back the
+      // pixels of its seed's hue, or pale ones (paper under the beam's light):
+      // with a colour cast the beam itself reads as coloured, and taken whole
+      // it merges into the note and the note fails the shape test.
       if (whole) {
+        const caps = track(cv.Mat.zeros(ph, pw, cv.CV_8UC1));
+        paint(caps, soft, 255);
         const labels = track(new cv.Mat());
         const n = cv.connectedComponents(whole, labels, 8, cv.CV_32S);
         const L = labels.data32S;
         const m = mask.data;
-        const keep = new Uint8Array(n);
-        for (let i = 0; i < m.length; i++) if (m[i]) keep[L[i]] = 1;
-        keep[0] = 0; // background
-        for (let i = 0; i < m.length; i++) m[i] = keep[L[i]] ? 255 : 0;
+        const C = caps.data;
+        const Hs = hsv.data;
+        const ang = (i) => (Hs[i * 3] * Math.PI) / 90; // OpenCV hue 0..180 -> rad
+        const cos = new Float64Array(n);
+        const sin = new Float64Array(n);
+        for (let i = 0; i < m.length; i++) {
+          if (!m[i]) continue;
+          cos[L[i]] += Math.cos(ang(i));
+          sin[L[i]] += Math.sin(ang(i));
+        }
+        const hue = Array.from(cos, (c, l) => (c || sin[l] ? Math.atan2(sin[l], c) : null));
+        hue[0] = null; // background
+        for (let i = 0; i < m.length; i++) {
+          const h = hue[L[i]];
+          m[i] = h != null && (!C[i] || Hs[i * 3 + 1] < SEED_SAT || Math.abs(((ang(i) - h + 3 * Math.PI) % (2 * Math.PI)) - Math.PI) < SEED_HUE) ? 255 : 0;
+        }
       }
 
       if (opts.maskCanvas) cv.imshow(opts.maskCanvas, mask);

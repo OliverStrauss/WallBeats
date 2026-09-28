@@ -43,8 +43,8 @@ and `js/laserLevels.js`.
 
 ## 3. Stability
 
-- **Snap angles to 5°.** Each note's edge directions are rounded to the nearest
-  5° before tracing. This also makes levels designable.
+- **Snap angles to 15°.** Each note's edge directions are rounded to the nearest
+  15° before tracing (a small note's detected angle is off by a few degrees). This also makes levels designable.
 - **Freeze still notes.** Once a note has moved less than a small threshold
   for about 400 ms, its geometry is locked until it moves clearly again.
 - Not planned for now: smoothing the angle (EMA) and wider target radii. Add
@@ -120,7 +120,7 @@ The view's beam changes from one point list to segments: `[{ pts, color }]`.
 
 ## 7. Build order
 
-1. Tracer: mirrors only, white beam, 5° snapping, freezing still notes, one
+1. Tracer: mirrors only, white beam, 15° snapping, freezing still notes, one
    fixed JSON level. Test on the simulated camera.
 2. Shape roles, then filters and the mixing table.
 3. Level JSON loader, inventory limits, locks, walls, no-note zones, solved

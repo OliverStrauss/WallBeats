@@ -1010,7 +1010,7 @@ const MINI_DRAW = {
     }
     ctx.save();
     ctx.shadowColor = '#fff';
-    ctx.shadowBlur = 12;
+    ctx.shadowBlur = 6 * u * ctx.getTransform().d; // device px (not scaled by the transform): keep it inside the beam mask at any size
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 4 * u;
     for (const s of v.beams) line(s.pts);

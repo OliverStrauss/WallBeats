@@ -16,7 +16,7 @@ import { freqOf } from './colors.js';
 import { LASER_LEVELS } from './laserLevels.js';
 
 const TOP = 0.16; // play area starts below the HUD
-const GAP = 0.012; // clearance kept from a note's paper
+const GAP = 0.02; // clearance kept from a note's paper: the beam's glow must not touch it, or vision merges the two
 const C = [523.25, 587.33, 659.25, 783.99, 880, 1046.5]; // C pentatonic blips
 const tone = (f, inst = 'pluck', v = 0.6, delay = 0) => ({ f, inst, v, delay });
 const WIN = [659.25, 783.99, 1046.5].map((f, i) => tone(f, 'bell', 0.7, 0.07 * i));
@@ -92,7 +92,7 @@ class Game {
 // colour. ← → or a click aims the level's aimable emitters; Tab skips levels.
 
 const TARGET_R = 0.035;
-const SNAP = Math.PI / 36; // note edges snap to 5°
+const SNAP = Math.PI / 12; // note edges snap to 15°: a small note's detected angle is off by a few degrees
 const MIRROR_MAX = 1.4; // long / short side below this: mirror
 const FILTER_MIN = 1.7; // above this: filter; in between a note keeps its role
 const STILL = 0.006; // a note moving less than this (world units) ...
@@ -239,8 +239,9 @@ class Laser extends Game {
         const len = dist(best.a, best.b);
         const nrm = [-(best.b[1] - best.a[1]) / len, (best.b[0] - best.a[0]) / len];
         const dot = d[0] * nrm[0] + d[1] * nrm[1];
+        const h = at(best.t); // reflect at the paper, start the new leg a gap out
         d = [d[0] - 2 * dot * nrm[0], d[1] - 2 * dot * nrm[1]];
-        p = q;
+        p = [h[0] + d[0] * GAP, h[1] + d[1] * GAP];
       } else if (best.kind === 'filter') {
         color = mix(color, best.n.color);
         if (!color) break;
@@ -288,10 +289,14 @@ class Laser extends Game {
     this.tick();
   }
 
-  /** Vision mask over the coloured light: beam, target rings, locks. */
+  /** Vision mask over the coloured light: beam, emitters, target rings, locks. */
   mask() {
     // soft: a note dropped across the beam is still seen whole (vision.js softBlockers)
-    const out = this.beams.map((s) => ({ a: s.pts[0], b: s.pts[1], r: 0.004, soft: true })); // × ballPad, still inside the gap
+    const out = this.beams.map((s) => ({ a: s.pts[0], b: s.pts[1], r: 0.007, soft: true })); // × ballPad: covers the glow; soft, so it may reach into a note
+    for (const e of this.lv.emitters) {
+      const [c, si] = [Math.cos(e.ang), Math.sin(e.ang)];
+      out.push({ a: [e.p[0] - 0.011 * c, e.p[1] - 0.011 * si], b: [e.p[0] + 0.007 * c, e.p[1] + 0.007 * si], r: 0.006 }); // the 24×16 box render.js draws
+    }
     for (const t of this.lv.targets) out.push({ a: t.p, b: t.p, r: TARGET_R * 0.75 });
     for (const l of this.lv.locks) out.push({ a: l.a, b: l.b, r: 0.006 });
     return out;
