@@ -10,7 +10,7 @@ import { buildLanes, spanAt, rateLabel, noteAt, oneWay, laneLabel } from '../js/
 import { InstrumentRing } from '../js/ring.js';
 import { INSTRUMENTS } from '../js/instruments.js';
 import { Plinko, SLOT_VALUES, LEVELS } from '../js/plinko.js';
-import { MINI_GAMES, raySeg } from '../js/minigames.js';
+import { MINI_GAMES, raySeg, mix, snapNote } from '../js/minigames.js';
 import { BeatEngine, ballProgress, ballY, clockPos, ghostPos, ballShown } from '../js/beat.js';
 
 const require = createRequire(import.meta.url);
@@ -819,18 +819,89 @@ function loadOpenCV() {
 
 // ------------------------------------------------------------------ mini games
 
-test('laser: reflects off a note to light a target', () => {
-  const A = 16 / 9;
+// Laser world is x 0..A; notes come in projector-normalized, like the tracker's.
+const A = 16 / 9;
+const worldRect = (cx, cy, w, h, ang = 0) => {
+  const [c, si] = [Math.cos(ang), Math.sin(ang)];
+  return [[-w, -h], [w, -h], [w, h], [-w, h]].map(([x, y]) => [(cx + (x * c - y * si) / 2) / A, cy + (x * si + y * c) / 2]);
+};
+function laserAt(level) {
+  const g = new MINI_GAMES.laser({ aspect: A });
+  g.tab(level);
+  return g;
+}
+
+test('laser: ray/segment and paint-wheel mixing', () => {
   assert.equal(raySeg([0, 0], [1, 0], [1, -1], [1, 1]), 1);
   assert.equal(raySeg([0, 0], [-1, 0], [1, -1], [1, 1]), Infinity);
-  const g = new MINI_GAMES.laser({ aspect: A });
-  g.ang = 0; // flat along y = 0.55 into the upper-left 45° edge of a diamond: the beam goes straight up
-  const diamond = [[0, -0.07], [0.07, 0], [0, 0.07], [-0.07, 0]].map(([x, y]) => [0.5 + x / A, 0.57 + y]); // square in world units
-  g.setNotes([{ id: 1, color: 'green', corners: diamond }]);
-  g.targets = [{ p: [0.5 * A - 0.05, 0.3], lit: false }];
+  assert.equal(mix('white', 'red'), 'red');
+  assert.equal(mix('red', 'yellow'), 'orange');
+  assert.equal(mix('yellow', 'blue'), 'green');
+  assert.equal(mix('blue', 'red'), 'purple');
+  assert.equal(mix('green', 'green'), 'green');
+  assert.equal(mix('red', 'green'), null);
+  assert.equal(mix('orange', 'red'), null);
+});
+
+test('laser: notes snap to 5° and take a role from their shape', () => {
+  const { pts, aspect } = snapNote(worldRect(0.5 * A, 0.5, 0.1, 0.1, 0.8).map(([x, y]) => [x * A, y])); // 45.8°
+  close(Math.atan2(pts[1][1] - pts[0][1], pts[1][0] - pts[0][0]), Math.PI / 4, 1e-9, 'snapped angle');
+  close(aspect, 1, 1e-9, 'square');
+  const g = laserAt(0);
+  g.setNotes([{ id: 1, color: 'red', corners: worldRect(0.5 * A, 0.5, 0.1, 0.1) }, { id: 2, color: 'red', corners: worldRect(1.2, 0.5, 0.1, 0.04) }]);
+  assert.deepEqual(g.notes.map((n) => n.role), ['mirror', 'filter']);
+  g.setNotes([{ id: 1, color: 'red', corners: worldRect(0.5 * A, 0.5, 0.155, 0.1) }]); // dead band keeps the role
+  assert.equal(g.notes[0].role, 'mirror');
+});
+
+test('laser: still notes freeze until they move clearly', () => {
+  const g = laserAt(0);
+  const at = (x) => [{ id: 1, color: 'red', corners: worldRect(x, 0.5, 0.1, 0.1) }];
+  g.setNotes(at(0.5));
+  g.t = 1;
+  g.setNotes(at(0.5));
+  const frozen = g.notes[0].pts[0][0];
+  g.setNotes(at(0.51)); // wobble: ignored
+  assert.equal(g.notes[0].pts[0][0], frozen);
+  g.setNotes(at(0.6)); // clear move: follows
+  assert.ok(g.notes[0].pts[0][0] > frozen + 0.05);
+});
+
+test('laser: level 1 is solved by one 45° mirror', () => {
+  const g = laserAt(0);
   g.step(1 / 60);
-  assert.ok(g.targets[0].lit, 'target above the mirror is lit');
+  assert.ok(!g.lv.targets[0].lit);
+  g.setNotes([{ id: 1, color: 'green', corners: worldRect(0.9, 0.84, 0.07, 0.07, Math.PI / 4) }]); // diamond: its upper-left edge turns the beam straight up
+  g.step(1 / 60);
+  assert.ok(g.lv.targets[0].lit, 'target above the mirror is lit');
   assert.equal(g.score, 1);
+});
+
+test('laser: filters tint, mix and respect the inventory', () => {
+  const g = laserAt(5); // orange target, red + yellow filters
+  const strip = (id, x, color) => ({ id, color, corners: worldRect(x, 0.55, 0.03, 0.1) });
+  g.setNotes([strip(1, 0.5, 'red')]);
+  g.step(1 / 60);
+  assert.equal(g.beams.at(-1).color, 'red');
+  assert.ok(!g.lv.targets[0].lit, 'red is not orange');
+  g.setNotes([strip(1, 0.5, 'red'), strip(2, 0.9, 'yellow')]);
+  g.step(1 / 60);
+  assert.equal(g.beams.at(-1).color, 'orange');
+  assert.ok(g.lv.targets[0].lit);
+  g.setNotes([strip(1, 0.5, 'red'), strip(2, 0.9, 'yellow'), strip(3, 1.1, 'red')]); // a second red is over the inventory
+  g.step(1 / 60);
+  assert.ok(g.notes.find((n) => n.id === 3).off, 'extra red is ignored');
+  assert.equal(g.beams.at(-1).color, 'orange');
+});
+
+test('laser: a lock only passes its colour', () => {
+  const g = laserAt(7); // red lock, purple target
+  g.setNotes([{ id: 1, color: 'blue', corners: worldRect(0.5, 0.55, 0.03, 0.1) }]);
+  g.step(1 / 60);
+  assert.ok(g.beams.at(-1).pts[1][0] < 0.91, 'blue stops at the red lock');
+  g.setNotes([{ id: 1, color: 'red', corners: worldRect(0.5, 0.55, 0.03, 0.1) }, { id: 2, color: 'blue', corners: worldRect(1.2, 0.55, 0.03, 0.1) }]);
+  g.step(1 / 60);
+  assert.ok(g.lv.targets[0].lit, 'red through the lock, purple after the blue filter');
 });
 
 for (const { name, fn } of tests) {

@@ -531,6 +531,9 @@ function gameAction(a) {
       g.reset();
       toast(a.cap, 'Restart');
       break;
+    case 'lane':
+      g.tab(a.arg);
+      break;
     default:
   }
 }
@@ -1332,8 +1335,8 @@ function haloCapsules(now = epochNow()) {
 }
 
 // Capsules along the white highlight box (the camera can see its stroke as a
-// note), one fat capsule over the top-right toast corner, and a band over the
-// echo strip (its ticks are note-coloured and as big as a small note).
+// note), one fat capsule over the top-right toast corner, the mini games' HUD
+// and banner, and a band over the echo strip (its ticks are note-coloured and as big as a small note).
 function uiCapsules() {
   const { w, h } = state.proj;
   const sc = refScale(w, h);
@@ -1342,6 +1345,11 @@ function uiCapsules() {
   if (state.proj.echo && state.mode === 'beat') {
     const band = echoBandH(state.proj.echo.rows?.length || 1) * sc;
     out.push({ a: [0, h - band / 2], b: [w, h - band / 2], r: band / 2 });
+  }
+  if (MINI_GAMES[state.mode]) {
+    // HUD and banner text: under a colour cast, white text reads as a note
+    out.push({ a: [0, 60 * sc], b: [w, 60 * sc], r: 60 * sc });
+    if (state.proj.game?.banner) out.push({ a: [w / 2 - 300 * sc, 0.3 * h + 20 * sc], b: [w / 2 + 300 * sc, 0.3 * h + 20 * sc], r: 50 * sc });
   }
   const note = state.proj.notes.find((n) => n.id === (state.focus ?? state.highlight));
   if (note && state.mode === 'beat') {

@@ -378,6 +378,18 @@ try {
   const g = await ctl.evaluate(() => [window.stickyWall.state.proj.notes.length, window.stickyWall.state.proj.game?.id]);
   check(g[0] === 7 && g[1] === 'laser', `laser runs and all notes stay tracked (${g})`);
   check(await ctl.isVisible('#miniKeys') && !(await ctl.isVisible('#keepBtn')), 'laser keys show, beat panels hide');
+  // level 4 (Paint it red) under the colour cast: a red strip tints the beam, the coloured light stays masked
+  await ctl.check('#simTint');
+  for (let i = 0; i < 3; i++) await proj.keyboard.press('Tab');
+  await ctl.evaluate(() => window.stickyWall.state.sim.setNotes([{ cx: 0.5, cy: 0.55, color: 'red', size: 18, h: 48 }]));
+  await sleep(2500);
+  await proj.screenshot({ path: path.join(OUT, '8b-laser-filter.png') });
+  const lz = await ctl.evaluate(() => {
+    const g = window.stickyWall.state.games.laser;
+    return { level: g.level, notes: g.notes.map((n) => n.role).join(), lit: g.lv.targets[0].lit || g.level > 3 };
+  });
+  check(lz.notes === 'filter' && lz.lit, `a red strip is a filter and lights the red target (${JSON.stringify(lz)})`);
+  await ctl.uncheck('#simTint');
 
   check(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 } finally {

@@ -30,8 +30,8 @@ const COLORS = NOTE_COLORS.map((c) => c.rgb);
 const VW = 1600;
 const VH = 900;
 
-function makeNote(cx, cy, angleDeg, colorIdx, size = 25) {
-  return { cx, cy, angle: (angleDeg * Math.PI) / 180, size, color: COLORS[colorIdx % COLORS.length] };
+function makeNote(cx, cy, angleDeg, colorIdx, size = 25, h = size) {
+  return { cx, cy, angle: (angleDeg * Math.PI) / 180, size, h, color: COLORS[colorIdx % COLORS.length] };
 }
 
 function defaultNotes() {
@@ -49,13 +49,14 @@ function defaultNotes() {
 // Corners of a note in proj-norm, clockwise starting top-left.
 export function noteCorners(n) {
   const s = n.size / 2;
+  const t = (n.h ?? n.size) / 2;
   const c = Math.cos(n.angle);
   const si = Math.sin(n.angle);
   return [
-    [-s, -s],
-    [s, -s],
-    [s, s],
-    [-s, s],
+    [-s, -t],
+    [s, -t],
+    [s, t],
+    [-s, t],
   ].map(([x, y]) => [(n.cx * VW + x * c - y * si) / VW, (n.cy * VH + x * si + y * c) / VH]);
 }
 
@@ -168,9 +169,9 @@ export class SimCamera {
     this.dirty = true;
   }
 
-  /** Replace the wall: [{ cx, cy, color: name, angle?: deg, size?: px at 1600x900 }] */
+  /** Replace the wall: [{ cx, cy, color: name, angle?: deg, size?: px at 1600x900, h?: px (strips) }] */
   setNotes(list) {
-    this.notes = list.map((n) => makeNote(n.cx, n.cy, n.angle || 0, NOTE_COLORS.findIndex((c) => c.name === n.color), n.size));
+    this.notes = list.map((n) => makeNote(n.cx, n.cy, n.angle || 0, NOTE_COLORS.findIndex((c) => c.name === n.color), n.size, n.h));
     this.dirty = true;
   }
 
