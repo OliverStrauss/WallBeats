@@ -525,7 +525,7 @@ function drawHelp(ctx, w, h) {
 export const GAMES = [
   { id: 'beat', name: 'BEAT WALL', blurb: 'sticky notes make music' },
   { id: 'plinko', name: 'PLINKO', blurb: 'notes are power-ups · beat your best' },
-  { id: 'laser', name: 'LASER', blurb: 'squares mirror · strips tint', keys: '← → or click aim · Tab level · R restart' },
+  { id: 'laser', name: 'LASER', blurb: 'squares mirror · strips tint', keys: '← → or click aim · Space hide beam · Tab level · R restart' },
 ];
 const MENU_COLS = 4;
 const MENU_ROWS = 3;
