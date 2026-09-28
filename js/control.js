@@ -1044,6 +1044,15 @@ els.feed.addEventListener('contextmenu', (ev) => {
   state.sim.removeNote(state.sim.noteIndexAtCam(feedPoint(ev)));
 });
 
+// Scroll over a note on the simulated wall to rotate it (Shift = fine).
+els.feed.addEventListener('wheel', (ev) => {
+  if (!state.sim || state.calibrating) return;
+  const i = state.sim.noteIndexAtCam(feedPoint(ev));
+  if (i < 0) return;
+  ev.preventDefault();
+  state.sim.rotateNote(i, Math.sign(ev.deltaY || ev.deltaX) * (ev.shiftKey ? 1 : 5));
+}, { passive: false });
+
 els.feed.addEventListener('pointermove', (ev) => {
   const p = feedPoint(ev);
   if (state.calibrating) {

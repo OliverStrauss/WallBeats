@@ -147,6 +147,12 @@ export class SimCamera {
     this.dirty = true;
   }
 
+  /** Turns note i by `deg` degrees (clockwise on the wall). */
+  rotateNote(i, deg) {
+    this.notes[i].angle += (deg * Math.PI) / 180;
+    this.dirty = true;
+  }
+
   /** Adds a note of colour `name` (default: next colour) at camPt (default: random spot). */
   addNote(name, camPt) {
     const i = name ? NOTE_COLORS.findIndex((c) => c.name === name) : this.notes.length;
