@@ -8,11 +8,11 @@ import { cvReady } from './cvload.js';
 import { Detector } from './vision.js';
 import { NOTE_COLORS, DEFAULT_PALETTE, classifyColor, freqOf, pitchOf } from './colors.js';
 import { unlock, soundReady, playTone, playNote } from './sound.js';
-import { buildLanes, rateLabel, noteAt, oneWay } from './lanes.js';
+import { buildLanes, noteAt, laneLabel } from './lanes.js';
 import { InstrumentRing } from './ring.js';
 import { INSTRUMENTS } from './instruments.js';
 import { BeatEngine, epochNow, clockPos, ballY, ghostPos } from './beat.js';
-import { ballRadiusN, ballGapN, refScale, inflate, HALO_MS, HALO_MASK, BALL_R, BALL_GAP, gridLevel } from './render.js';
+import { ballRadiusN, ballGapN, refScale, inflate, highlightBox, HALO_MS, HALO_MASK, HIGHLIGHT_MASK, TOAST_MASK, BALL_R, BALL_GAP, gridLevel } from './render.js';
 import { keyAction } from './keys.js';
 
 const $ = (id) => document.getElementById(id);
@@ -164,6 +164,7 @@ function beatPayload() {
     focus: state.focus,
     mutes: [...engine.mutes],
     solo: engine.solo,
+    once: [...engine.once],
     overlay: state.overlay,
     outlines: s.outlines,
     echoBars: engine.o.echoBars,
@@ -263,7 +264,7 @@ function runAction(a) {
       ({ laneId: state.highlight, noteId: state.focus } = all[(((i < 0 ? 0 : i + a.arg) % n) + n) % n]);
       const l = engine.lane(state.highlight);
       const where = l.upperId == null ? '' : state.focus === l.upperId ? ' top' : ' bottom';
-      toast(a.cap, `${laneName(l.id)}${where} · ${noteLabel(state.focus)} · ${engine.instrumentOf(state.focus)} · ${rateLabel(oneWay(l), engine.snap)}`);
+      toast(a.cap, `${laneName(l.id)}${where} · ${noteLabel(state.focus)} · ${engine.instrumentOf(state.focus)} · ${laneLabel(l, engine.snap)}`);
       break;
     }
     case 'addBall':
@@ -290,6 +291,12 @@ function runAction(a) {
       engine.resetBalls();
       toast(a.cap, 'Balls reset: 1 per lane');
       break;
+    case 'once': {
+      const id = state.focus ?? lane?.targetId;
+      if (id == null) return toast(a.cap, 'No lane highlighted');
+      toast(a.cap, `${noteLabel(id)} → ${engine.toggleOnce(id) ? 'once per loop' : 'loop'}`);
+      break;
+    }
     case 'openRing': {
       if (!lane) return toast(a.cap, 'No lane highlighted');
       openRing(state.focus ?? lane.targetId, a.cap);
@@ -507,12 +514,12 @@ function drawEchoPanel() {
 let lanesSig = '';
 function renderLanes() {
   const tbody = $('lanesTable').tBodies[0];
-  const note = (id, color) => ({ id, color, pitch: pitchOf(color) ?? '?', instrument: engine.instrumentOf(id), muted: !engine.audible(color) });
+  const note = (id, color) => ({ id, color, pitch: pitchOf(color) ?? '?', instrument: engine.instrumentOf(id), once: engine.once.has(id), muted: !engine.audible(color) });
   const rows = engine.lanes.map((l, i) => ({
     id: l.id,
     num: i + 1,
     notes: [...(l.upperId == null ? [] : [note(l.upperId, l.upperColor)]), note(l.targetId, l.color)],
-    rate: rateLabel(oneWay(l), engine.snap),
+    rate: laneLabel(l, engine.snap),
     balls: engine.ballsOf(l.id).length,
     hi: l.id === state.highlight,
     focus: state.focus,
@@ -530,7 +537,7 @@ function renderLanes() {
     const swatch = n.color ? `<span class="swatch" style="background:rgb(${state.palette[n.color].join(',')})"></span>` : '';
     const role = span > 1 ? `<span class="muted">${j ? 'bottom' : 'top'}</span> ` : '';
     const target = `<td>${role}${swatch}${n.pitch}${n.muted ? ' <span class="muted">muted</span>' : ''}</td>`;
-    const inst = `<td><select title="Instrument of this note">${INSTRUMENTS.map((x) => `<option${x === n.instrument ? ' selected' : ''}>${x}</option>`).join('')}</select></td>`;
+    const inst = `<td><select title="Instrument of this note">${INSTRUMENTS.map((x) => `<option${x === n.instrument ? ' selected' : ''}>${x}</option>`).join('')}</select> <button data-once title="Loop: every hit · Once: first hit of each loop (O)">${n.once ? 'once' : 'loop'}</button></td>`;
     tr.innerHTML = j
       ? `${target}${inst}`
       : `<td rowspan="${span}">${r.num}</td>${target}${inst}<td rowspan="${span}">${r.rate}</td>
@@ -540,7 +547,8 @@ function renderLanes() {
       state.highlight = r.id;
       state.focus = n.id;
       const d = Number(e.target.dataset?.d);
-      if (d) runAction({ action: d > 0 ? 'addBall' : 'removeBall', cap: d > 0 ? 'B' : '⇧B' });
+      if (e.target.dataset?.once != null) runAction({ action: 'once', cap: 'O' });
+      else if (d) runAction({ action: d > 0 ? 'addBall' : 'removeBall', cap: d > 0 ? 'B' : '⇧B' });
       else sendBeat();
     });
     tr.querySelector('select').addEventListener('change', (e) => {
@@ -994,6 +1002,13 @@ function ballCapsules(now = epochNow()) {
   const clock = engine.clock();
   const out = [];
   for (const { lane, balls, at } of drawnLanes()) {
+    // a pair's whole loop region (band, dim silent ball, lit ball) is blanked, gap to gap
+    if (lane.upperId != null) {
+      const clear = (BALL_GAP * refScale(w, h) + R) / h;
+      const lo = lane.ceil + clear;
+      out.push({ a: [lane.x * w, lo * h], b: [lane.x * w, Math.max(lo, lane.top - clear) * h], r: Math.max(R, (lane.w * w) / 2) });
+      continue;
+    }
     for (const ball of balls) {
       let lo = Infinity;
       let hi = -Infinity;
@@ -1004,7 +1019,6 @@ function ballCapsules(now = epochNow()) {
         hi = Math.max(hi, y);
       }
       const clear = (BALL_GAP * refScale(w, h) + R) / h; // capsule end -> paper
-      if (lane.upperId != null) lo = Math.max(lo, lane.ceil + clear);
       hi = Math.min(hi, lane.top - clear);
       hi = Math.max(hi, lo);
       out.push({ a: [lane.x * w, lo * h], b: [lane.x * w, hi * h], r: R });
@@ -1029,6 +1043,23 @@ function haloCapsules(now = epochNow()) {
     const [lo, hi] = HALO_MASK;
     const pts = inflate(note.corners.map(([x, y]) => [x * w, y * h]), ((lo + hi) / 2) * sc);
     pts.forEach((p, i) => out.push({ a: p, b: pts[(i + 1) % pts.length], r: ((hi - lo) / 2) * sc }));
+  }
+  return out;
+}
+
+// Capsules along the white highlight box (the camera can see its stroke as a
+// note) and one fat capsule over the top-right toast corner.
+function uiCapsules() {
+  const { w, h } = state.proj;
+  const sc = refScale(w, h);
+  const [tw, th] = TOAST_MASK.map((v) => v * sc);
+  const out = [{ a: [w - tw + th / 2, th / 2], b: [w, th / 2], r: th / 2 }];
+  const note = state.proj.notes.find((n) => n.id === (state.focus ?? state.highlight));
+  if (note) {
+    const { cx, cy, side } = highlightBox(note.corners.map(([x, y]) => [x * w, y * h]), sc);
+    const d = side / 2;
+    const pts = [[cx - d, cy - d], [cx + d, cy - d], [cx + d, cy + d], [cx - d, cy + d]];
+    pts.forEach((p, i) => out.push({ a: p, b: pts[(i + 1) % 4], r: HIGHLIGHT_MASK * sc }));
   }
   return out;
 }
@@ -1069,7 +1100,7 @@ function detectOnce() {
   if (!w || !h || els.video.readyState < 2) return;
   const calib = activeCalib();
   try {
-    state.blockers = calib ? toCamBlockers(calib, [...ballCapsules(), ...haloCapsules()]) : [];
+    state.blockers = calib ? toCamBlockers(calib, [...ballCapsules(), ...haloCapsules(), ...uiCapsules()]) : [];
     const res = state.detector.process(els.video, w, h, state.settings, {
       maskCanvas: els.mask,
       roi: calib && state.settings.roiOnly ? screenQuadInCamera(calib) : null,

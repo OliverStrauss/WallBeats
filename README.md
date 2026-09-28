@@ -7,17 +7,21 @@ Watch the working demo here: (https://www.youtube.com/watch?v=X_fnuMzRjMM)
 ## How to play
 
 
-- **Every note gets a ball.** A lone note's ball drops from the top of the
-  wall and climbs back. The ruler lines on the wall show the fall time, 1/8
-  to 1 bar (*Lone fall per bar* sets the spacing); with Snap on it rounds to
-  the nearest line. All balls leave the top on the downbeat, so only notes at
-  the same height hit together; lower notes hit later and less often.
-- **Pairs ping-pong.** A note below another one that crosses the upper note's
-  centre line pairs with it: the ball bounces between them and both play.
-  Stacks of 3+ chain into pairs top to bottom.
+- **The wall is one bar.** The ruler lines split it into 8 rows of 1/8, top
+  to bottom. A note plays at its row: a note on line 3 plays 3/8 into the bar
+  (*Bar height* sets the spacing; Snap rounds to the nearest line).
+- **Lone note = once per bar.** Its ball leaves the top on every downbeat,
+  reaches the note at its row and climbs back by the next downbeat.
+- **Pair = loop region.** A note below another one that crosses the upper
+  note's centre line pairs with it: the ball ping-pongs between them. It
+  bounces silently (dim) until the upper note's row, then both notes play
+  every gap until the end of the bar. E.g. upper note on 2/8 and a 1/8 gap:
+  8ths from 2/8 to the end of the bar. Stacks of 3+ chain into pairs.
+- **Once.** **O** (or the loop/once button in the Lanes panel) makes the
+  selected note play only the first of its hits in each echo loop (4 bars).
 - **Colour = pitch.** purple C4 · blue D4 · green E4 · yellow G4 · orange A4 ·
   red C5 (pentatonic, so any mix sounds fine).
-- **Pair gap = rhythm.** Each *Pair gap per 1/8* of distance between the two
+- **Pair gap = loop rate.** Each *Pair gap per 1/8* of distance between the two
   notes is one more 1/8 note between hits: 2 units apart hits every 1/4 note.
   With **Snap** on (default) gaps round to whole 1/8s; off gives free rhythms.
 - **More balls = more hits.** **B** adds a ball to the highlighted lane and
@@ -47,6 +51,7 @@ Watch the working demo here: (https://www.youtube.com/watch?v=X_fnuMzRjMM)
 | Tab / ⇧Tab | Highlight next / previous lane (white box around its note, a pair's upper note) |
 | B / ⇧B | Add / remove a ball in the highlighted lane |
 | A / D | Nudge the highlighted lane left / right |
+| O | Selected note: loop (every hit) / once (first hit of each echo loop) |
 | E | Instrument ring on the highlighted lane's target |
 | ← → ↵ Esc | Ring open: spin / keep / cancel |
 | K / X / Z | Keep last 4 bars / clear kept / undo keep |

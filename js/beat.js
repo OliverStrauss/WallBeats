@@ -44,10 +44,18 @@ export function clockPos(clock, now) {
   return clock.running ? clock.pos0 + ((now - clock.anchor) * clock.bpm) / 15 : clock.pos0;
 }
 
-/** 0 at the top, 1 when touching the target. Hits when pos = phase (mod n). */
-export function ballProgress(pos, phase, n) {
-  const u = ((((pos - phase) / n + 0.5) % 1) + 1) % 1;
-  return 1 - Math.abs(1 - 2 * u);
+/**
+ * 0 at the top, 1 when touching the target. Hits when pos = phase (mod n).
+ * The ball falls for `fall` 16ths before each hit and climbs back for the rest.
+ */
+export function ballProgress(pos, phase, n, fall = n / 2) {
+  const u = ((((pos - phase + fall) % n) + n) % n);
+  return u < fall ? u / fall : 1 - (u - fall) / (n - fall);
+}
+
+/** Does a hit at `pos` sound? A pair only plays from its row to the end of the bar. */
+export function inWindow(lane, pos) {
+  return lane.upperId == null || ((pos % 16) + 16) % 16 >= (lane.step ?? 0) - 1e-6;
 }
 
 /**
@@ -60,7 +68,7 @@ export function ballProgress(pos, phase, n) {
 export function ballY(lane, phase, pos, rN, gapN = 0) {
   const y0 = lane.upperId != null ? lane.ceil + rN + gapN : Math.max(rN, lane.ceil);
   const y1 = Math.max(y0, lane.top - rN - gapN);
-  return y0 + (y1 - y0) * ballProgress(pos, phase, lane.n);
+  return y0 + (y1 - y0) * ballProgress(pos, phase, lane.n, lane.upperId == null ? lane.step ?? lane.n / 2 : lane.n / 2);
 }
 
 // A note that leaves the wall hands its instrument to a note of the same colour
@@ -73,13 +81,34 @@ export function ghostPos(ghost, pos) {
   return ghost.from + ((((pos - ghost.from) % ghost.L) + ghost.L) % ghost.L);
 }
 
+/** Is a hit at pos `p` (hits every n) the first of its loop of L 16ths? "Once" notes play only those. */
+export function onceHit(p, n, L) {
+  return Math.floor((p + 1e-6) / L) !== Math.floor((p - n + 1e-6) / L);
+}
+
+/**
+ * Should a ball be drawn at `pos`? Always, unless every note its lane strikes
+ * is a once note: then only the lane's first ball, on the way down to a once hit.
+ */
+export function ballShown(lane, ballIndex, phase, pos, once, L) {
+  const strikes = [[0, lane.targetId]];
+  if (lane.upperId != null) strikes.push([lane.n / 2, lane.upperId]);
+  if (strikes.some(([, id]) => !once.has(id))) return true;
+  if (ballIndex > 0) return false;
+  return strikes.some(([off]) => {
+    const ph = phase + off;
+    const next = ph + Math.ceil((pos - ph) / lane.n) * lane.n;
+    return next - pos <= lane.n / 2 && onceHit(next, lane.n, L);
+  });
+}
+
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
-// A lone ball leaves the top of the wall on the downbeat, so it first hits
-// half a cycle later: notes at different heights hit at different times.
-// A pair's ball hits the lower note on the downbeat.
+// A lone ball leaves the top of the wall on the downbeat and hits at its row.
+// A pair's ball hits the upper note at the upper note's row (bottom half a cycle before).
 export function startPhase(lane) {
-  return lane.upperId == null ? lane.n / 2 : 0;
+  const step = lane.step ?? (lane.upperId == null ? lane.n / 2 : 0);
+  return lane.upperId == null ? step : step - lane.n / 2;
 }
 
 export class BeatEngine {
@@ -101,6 +130,7 @@ export class BeatEngine {
     this.moved = []; // instruments of notes that left: [{ color, instrument, at }]
     this.mutes = new Set(); // colour names
     this.solo = null; // colour name or null
+    this.once = new Set(); // noteIds that play once per loop instead of every hit
     this.echo = []; // live hits played: [{ pos, color, instrument, velocity, noteId }]
     this.layers = []; // kept loops: [{ L, events: [{ step, color, instrument, velocity, noteId }] }]
   }
@@ -126,6 +156,7 @@ export class BeatEngine {
 
   start(now) {
     if (this.running) return;
+    this.pos0 = Math.ceil(this.pos0 / 16 - 1e-9) * 16; // restart on a bar line: rows are times in the bar
     this.anchor = now;
     this.running = true;
     this.horizon = this.pos0;
@@ -145,7 +176,7 @@ export class BeatEngine {
     this.base = this.pos0;
     for (const l of this.lanes) {
       const [first] = this.ballsOf(l.id);
-      if (first) first.phase = this.pos0 + l.n / 2;
+      if (first) first.phase = this.pos0 + startPhase(l);
       this._space(l.id);
     }
   }
@@ -168,14 +199,13 @@ export class BeatEngine {
   /** Lanes from buildLanes(). New lanes get one ball; vanished lanes lose theirs. */
   setLanes(lanes) {
     const ids = new Set(lanes.map((l) => l.id));
-    const oldN = new Map(this.lanes.map((l) => [l.id, l.n]));
+    const old = new Map(this.lanes.map((l) => [l.id, `${l.n}/${l.step}/${l.upperId}`]));
     for (const id of [...this.balls.keys()]) if (!ids.has(id)) this.balls.delete(id);
     for (const l of lanes) {
       const list = this.balls.get(l.id);
       if (!list) this.balls.set(l.id, [this._ball(this.base + startPhase(l))]);
-      // cycle changed (note moved): back in step with the bar, else the old
-      // phase puts its hits on different steps than a new lane of this n
-      else if (oldN.has(l.id) && oldN.get(l.id) !== l.n) list[0].phase = this.base + startPhase(l);
+      // cycle or row changed (note moved): back in step with the bar
+      else if (old.has(l.id) && old.get(l.id) !== `${l.n}/${l.step}/${l.upperId}`) list[0].phase = this.base + startPhase(l);
     }
     this.lanes = lanes;
     for (const l of lanes) this._space(l.id);
@@ -261,6 +291,13 @@ export class BeatEngine {
     this.noteColors = new Map(notes.map((n) => [n.id, n.color]));
   }
 
+  /** Toggle a note between loop (every hit) and once (first hit of each loop). */
+  toggleOnce(noteId) {
+    if (this.once.has(noteId)) this.once.delete(noteId);
+    else this.once.add(noteId);
+    return this.once.has(noteId);
+  }
+
   // ---------------------------------------------------------------- mute / solo
 
   audible(color) {
@@ -298,10 +335,12 @@ export class BeatEngine {
       if (lane.upperId != null) strikes.push({ off: lane.n / 2, noteId: lane.upperId, color: lane.upperColor });
       for (const st of strikes) {
         if (!this.audible(st.color)) continue;
-        for (const ball of this.ballsOf(lane.id)) {
+        const once = this.once.has(st.noteId);
+        this.ballsOf(lane.id).forEach((ball, bi) => {
+          if (once && bi > 0) return;
           const ph = ball.phase + st.off;
           for (let p = ph + Math.ceil((from - ph) / lane.n) * lane.n; p < to; p += lane.n) {
-            if (p < from) continue;
+            if (p < from || !inWindow(lane, p) || (once && !onceHit(p, lane.n, this.loopSteps()))) continue;
             hits.push({
               time: this.timeAt(p),
               pos: p,
@@ -314,7 +353,7 @@ export class BeatEngine {
               kept: false,
             });
           }
-        }
+        });
       }
     }
     for (const h of hits) this.echo.push({ pos: h.pos, color: h.color, instrument: h.instrument, velocity: h.velocity, noteId: h.noteId });

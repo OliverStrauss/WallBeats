@@ -1,11 +1,12 @@
 // Lanes from sticky notes (pure JS, no DOM).
 //
-// Every note gets a ball. A *lone* note's ball drops from the top of the wall
-// onto it and climbs back to the top, at a fixed speed (`barH` of wall height
-// per bar), so only notes at the same height hit together. The fall takes
-// 1/8 to 1 bar: the wall has a ruler line every 1/8 (see render.js). Two notes stacked so the lower one crosses the
-// upper one's centre line form a *pair*: the ball ping-pongs between them and
-// both notes play. The gap between them sets the rhythm (1/8 per `unit`).
+// The wall is one bar, top to bottom, in 8 rows of 1/8 (`barH` of wall height
+// per bar). A note's row (`step`, 16ths into the bar) is when it plays.
+// A *lone* note's ball leaves the top of the wall on every downbeat, reaches the
+// note at its row and climbs back by the next downbeat: it plays once per bar.
+// Two notes stacked so the lower one crosses the upper one's centre line form a
+// *pair*, a loop region: the ball ping-pongs between them and both notes play
+// every gap (1/8 per `unit`), from the upper note's row to the end of the bar.
 // Stacks of 3+ chain into pairs top to bottom.
 //
 // Everything is in projector-normalized coordinates (0..1).
@@ -14,8 +15,8 @@ import { centroid } from './tracker.js';
 
 export const LANE_DEFAULTS = {
   unit: 0.1, // normalized gap per 1/8 note between pair hits
-  barH: 1, // lone balls fall this much of the wall height per bar
-  snap: true, // round pair gaps and lone falls to 1, 2, 4, 8 ... 1/8s (cycles divide the bar)
+  barH: 1, // wall height per bar: 8 rows of barH/8
+  snap: true, // rows snap to 1/8s; pair gaps to 1, 2, 4, 8 1/8s (cycles divide the bar)
   minWidth: 0.0375, // lane width clamp: 2x ball diameter (30 px at 1600 wide)
   minN: 0.25, // shortest un-snapped gap, in 1/8s
   offsets: {}, // { laneId: dx } fine-tune nudges (A / D)
@@ -59,17 +60,23 @@ export function noteAt(notes, pt) {
  * @param notes [{ id, corners: [[x,y] x4], color }] tracked notes
  * @param opts  see LANE_DEFAULTS
  * @returns lanes sorted left to right:
- *   { id, x, w, upperId, upperColor, ceil, targetId, color, top, d, n }
+ *   { id, x, w, upperId, upperColor, ceil, targetId, color, top, d, n, step }
+ *   step = 16ths into the bar at which the lane starts playing (its top note's row).
  *   Pair: id = upper note id, ceil = upper note's bottom edge, n = cycle in
  *   16ths (bottom hit at phase, top hit at phase + n/2).
  *   Lone: id = the note's id, upperId = null, ceil = 0 (top of the wall),
- *   n = there and back in 16ths (hits at phase + k*n, see beat.js).
+ *   n = 16, one bar (hits at phase + k*n, see beat.js).
  */
 export function buildLanes(notes, opts = {}) {
   const o = { ...LANE_DEFAULTS, ...opts };
   const width = (n) => {
     const xs = n.corners.map((p) => p[0]);
     return Math.max(Math.max(...xs) - Math.min(...xs), o.minWidth);
+  };
+  // row of a top edge at y, in 16ths into the bar: 0, 2 ... 14 with Snap on
+  const stepAt = (y) => {
+    const t = (16 * y) / o.barH;
+    return o.snap ? 2 * Math.min(7, Math.max(0, Math.round(t / 2))) : Math.min(15, Math.max(0, t));
   };
   const lanes = [];
   const paired = new Set();
@@ -91,20 +98,18 @@ export function buildLanes(notes, opts = {}) {
       id: u.id, x, w: width(u),
       upperId: u.id, upperColor: u.color ?? null, ceil: uSpan[1],
       targetId: best.note.id, color: best.note.color ?? null, top: best.top,
-      d, n: 4 * lengthIn8ths(d, o),
+      d, n: 4 * lengthIn8ths(d, o), step: stepAt(uSpan[0]),
     });
   }
   for (const f of notes) {
     if (paired.has(f.id)) continue;
     const x = centroid(f.corners)[0] + (o.offsets[f.id] || 0);
     const top = spanAt(f.corners, x)?.[0] ?? Math.min(...f.corners.map((p) => p[1]));
-    const down = (16 * top) / o.barH; // 16ths from the top down to the note
-    const fall = o.snap ? pow2(down, 1, 4) : Math.min(16, Math.max(2, down));
     lanes.push({
       id: f.id, x, w: width(f),
       upperId: null, upperColor: null, ceil: 0,
       targetId: f.id, color: f.color ?? null, top,
-      d: top, n: 2 * fall,
+      d: top, n: 16, step: stepAt(top),
     });
   }
   return lanes.sort((a, b) => a.x - b.x || a.id - b.id);
@@ -122,9 +127,15 @@ export function lengthIn8ths(d, opts = {}) {
 // is the same every bar; 3/8 or 3/16 cycles drift against the bar line.
 const pow2 = (x, lo, hi) => 2 ** Math.min(hi, Math.max(lo, Math.round(Math.log2(Math.max(x, 1e-9)))));
 
-/** One-way travel time of a lane's ball, in 16ths (a lone ball's fall). */
+/** One-way travel time of a pair's ball, in 16ths (the time between its hits). */
 export function oneWay(lane) {
   return lane.n / 2;
+}
+
+/** "@ 3/8" for a lone note, "1/8 from 1/4" for a pair (every 1/8, from 2/8 into the bar). */
+export function laneLabel(lane, snap = true) {
+  const at = lane.step ? rateLabel(lane.step, snap) : '0';
+  return lane.upperId == null ? `@ ${at}` : `${rateLabel(oneWay(lane), snap)} from ${at}`;
 }
 
 // "1/4", "3/16", "1", "≈0.37" ... for n 16ths.

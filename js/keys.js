@@ -32,6 +32,7 @@ export function keyAction({ key, code, shift }) {
     case 'ArrowRight': return { action: 'spin', arg: 1, cap: '→' };
     case 'Enter': return { action: 'ringCommit', cap: '↵' };
     case 'Escape': return { action: 'ringCancel', cap: 'Esc' };
+    case 'o': return { action: 'once', cap: 'O' };
     case 'e': return { action: 'openRing', cap: 'E' };
     case 'k': return { action: 'keep', cap: 'K' };
     case 'x': return { action: 'clearLayers', cap: 'X' };
@@ -50,6 +51,7 @@ export const KEY_HELP = [
   ['Tab ⇧Tab', 'next / previous note'],
   ['B ⇧B', 'add / remove ball'],
   ['A D', 'nudge lane left / right'],
+  ['O', 'selected note: loop / once per loop'],
   ['E', 'instrument ring on the selected note'],
   ['← →  ↵  Esc', 'ring: spin · keep · cancel'],
   ['K X Z', 'keep 4 bars · clear · undo keep'],
