@@ -12,8 +12,9 @@ import { buildLanes, noteAt, laneLabel } from './lanes.js';
 import { InstrumentRing } from './ring.js';
 import { INSTRUMENTS } from './instruments.js';
 import { BeatEngine, epochNow, clockPos, ballY, ghostPos } from './beat.js';
-import { ballRadiusN, ballGapN, refScale, inflate, highlightBox, HALO_MS, HALO_MASK, HIGHLIGHT_MASK, TOAST_MASK, BALL_R, BALL_GAP, gridLevel } from './render.js';
+import { ballRadiusN, ballGapN, refScale, inflate, highlightBox, HALO_MS, HALO_MASK, HIGHLIGHT_MASK, TOAST_MASK, BALL_R, BALL_GAP, gridLevel, GAMES, menuTiles } from './render.js';
 import { keyAction } from './keys.js';
+import { Plinko } from './plinko.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -69,6 +70,9 @@ const state = {
   overlay: false, // ? key overlay on the wall
   halos: [], // [{ noteId, color, at }] hits in flight (drawn + masked out of detection)
   hitLog: [], // recent hits (tests / debugging)
+  mode: 'menu', // 'menu' | 'beat' | 'plinko'
+  menuIndex: 0,
+  plinko: null, // Plinko, built when the game starts (needs the projector aspect)
   // Mirror of what the projector is showing (drives the simulated camera).
   proj: {
     w: 1920,
@@ -80,6 +84,9 @@ const state = {
     echo: null,
     ring: null,
     toast: null,
+    mode: 'menu',
+    menu: { index: 0 },
+    plinko: null,
   },
 };
 
@@ -117,6 +124,7 @@ function onMessage(msg) {
   if (reconnect) setTimeout(syncProjector, 0);
   state.proj.w = msg.w;
   state.proj.h = msg.h;
+  if (state.plinko && Math.abs(state.plinko.A - msg.w / msg.h) > 0.01) state.plinko = newPlinko();
 }
 
 // ---------------------------------------------------------------- beat engine
@@ -239,6 +247,9 @@ function setSetting(key, value) {
 
 // Every action from the keyboard (either window) or the buttons.
 function runAction(a) {
+  if (a.action === 'menu') return setMode('menu');
+  if (state.mode === 'menu') return menuAction(a);
+  if (state.mode === 'plinko') return plinkoAction(a);
   const now = epochNow();
   const lane = engine.lane(state.highlight);
   const colorName = (c) => `${c} (${pitchOf(c)})`;
@@ -352,6 +363,105 @@ function runAction(a) {
   sendBeat();
 }
 
+// ---------------------------------------------------------------- game modes
+// The menu picks a game; M (either window) comes back to it. Leaving the beat
+// stops its clock so it doesn't keep playing under another game.
+
+function sendMode() {
+  state.proj.mode = state.mode;
+  state.proj.menu = { index: state.menuIndex };
+  channel.send('mode', { mode: state.mode, menu: state.proj.menu });
+  $('modeSelect').value = state.mode;
+}
+
+function setMode(mode) {
+  if (state.mode === 'beat' && mode !== 'beat' && engine.running) engine.toggle(epochNow());
+  state.mode = mode;
+  if (mode === 'plinko' && !state.plinko) state.plinko = newPlinko();
+  sendMode();
+  sendBeat();
+  toast('M', mode === 'menu' ? 'Menu' : GAMES.find((g) => g.id === mode).name);
+}
+
+function menuAction(a) {
+  const n = GAMES.length;
+  if (a.action === 'spin' || a.action === 'lane' || a.action === 'nudge') {
+    state.menuIndex = (state.menuIndex + a.arg + n) % n;
+    playNote('pluck', freqOf(NOTE_COLORS[state.menuIndex % 6].name), 0.5);
+    sendMode();
+  } else if (a.action === 'ringCommit' || a.action === 'toggleRun') {
+    setMode(GAMES[state.menuIndex].id);
+  }
+}
+
+// ---------------------------------------------------------------- plinko
+// Physics runs here (this window owns sound and the vision mask); the
+// projector draws each step's view().
+
+function newPlinko() {
+  const { w, h } = state.proj;
+  const p = new Plinko({ aspect: w / h, ballR: ballRadiusN(w, h), gap: ballGapN(w, h) });
+  p.setNotes(state.proj.notes);
+  return p;
+}
+
+function plinkoAction(a) {
+  const p = state.plinko;
+  switch (a.action) {
+    case 'toggleRun':
+    case 'addBall':
+    case 'ringCommit':
+      p.drop();
+      break;
+    case 'spin':
+    case 'nudge':
+      p.setAim(p.aim + a.arg * p.slotW * 0.25);
+      break;
+    case 'reset':
+      p.reset();
+      toast(a.cap, 'Plinko reset');
+      break;
+    default:
+  }
+}
+
+// Pentatonic by position: pegs on the left are low, on the right high.
+function plinkoFreq(x) {
+  const i = Math.max(0, Math.min(17, Math.floor(x * 18)));
+  return NOTE_COLORS[i % 6].freq * 2 ** Math.floor(i / 6 - 1);
+}
+
+let plinkoLast = performance.now();
+let pegSoundAt = 0;
+function plinkoTick() {
+  const t = performance.now();
+  const dt = (t - plinkoLast) / 1000;
+  plinkoLast = t;
+  if (state.mode !== 'plinko' || !state.plinko) return;
+  const now = epochNow();
+  for (const e of state.plinko.step(dt)) {
+    const v = Math.min(1, e.speed / 1.5);
+    if (e.kind === 'peg' && t - pegSoundAt > 25) {
+      pegSoundAt = t; // ponytail: global peg-sound throttle; per-peg voices if it sounds thin
+      playNote('pluck', plinkoFreq(e.x), 0.2 + 0.5 * v);
+    } else if (e.kind === 'note') {
+      playNote(engine.instrumentOf(e.noteId), freqOf(e.color) ?? freqOf('purple'), 0.4 + 0.6 * v);
+      state.halos.push({ noteId: e.noteId, color: e.color, at: now });
+      channel.send('hitFx', { noteId: e.noteId, color: e.color, at: now });
+    } else if (e.kind === 'slot') {
+      const big = e.value >= 25;
+      playNote('marimba', 523.25, 0.8);
+      if (big) [659.25, 783.99, 1046.5].forEach((f, i) => playNote('bell', f, 0.7, now + 0.07 * (i + 1)));
+    }
+  }
+  state.proj.plinko = state.plinko.view();
+  channel.send('plinko', state.proj.plinko);
+}
+// ponytail: 60 Hz setInterval on the control window; move physics into the projector if it stutters
+setInterval(plinkoTick, 1000 / 60);
+
+$('modeSelect').addEventListener('change', (e) => setMode(e.target.value));
+
 // Snapshot of the notes and balls a kept layer came from, so the wall keeps
 // showing them (dim) after the notes are taken down.
 function ghostOf(layer) {
@@ -405,6 +515,15 @@ function openRing(noteId, cap) {
 // A click on the wall (projector window): a second click keeps the ring's
 // choice, a click on a note opens the ring on it.
 function clickWall(pt) {
+  if (state.mode === 'menu') {
+    const i = menuTiles(state.proj.w, state.proj.h).findIndex((t) => pt[0] >= t.x && pt[0] <= t.x + t.w && pt[1] >= t.y && pt[1] <= t.y + t.h);
+    if (GAMES[i]) setMode(GAMES[i].id);
+    return;
+  }
+  if (state.mode === 'plinko') {
+    state.plinko.drop(pt[0] * state.plinko.A);
+    return;
+  }
   if (ring.isOpen) {
     runAction({ action: 'ringCommit', cap: 'Click' });
     return;
@@ -602,6 +721,7 @@ function renderBeatUI() {
 
 // Push everything the projector should be showing (after it (re)connects).
 function syncProjector() {
+  sendMode();
   channel.send('calib', { on: state.calibrating });
   channel.send('cross', { pt: state.proj.cross });
   channel.send('notes', { notes: state.proj.notes });
@@ -985,6 +1105,7 @@ function publishNotes(raw) {
   const notes = raw.map((n) => ({ ...n, corners: n.corners.map(([x, y]) => [x + dx, y]) }));
   state.proj.notes = notes;
   channel.send('notes', { notes });
+  state.plinko?.setNotes(notes);
   rebuildLanes();
 }
 
@@ -1027,6 +1148,25 @@ function ballCapsules(now = epochNow()) {
   return out;
 }
 
+// Plinko balls: capsules along each ball's recent path (camera lag + a bit).
+function plinkoCapsules() {
+  const p = state.plinko;
+  if (!p) return [];
+  const { w, h } = state.proj;
+  const R = BALL_R * refScale(w, h) * state.settings.ballPad;
+  const out = [];
+  for (const b of p.balls) {
+    const pts = b.trail.filter(([, , t]) => p.t - t < state.settings.ballLag + 0.05).map(([x, y]) => [(x / p.A) * w, y * h]);
+    pts.push([(b.x / p.A) * w, b.y * h]);
+    for (let i = 0; i < pts.length; i += 3) out.push({ a: pts[i], b: pts[Math.min(i + 3, pts.length - 1)], r: R });
+  }
+  return out;
+}
+
+function ballMask() {
+  return state.mode === 'beat' ? ballCapsules() : state.mode === 'plinko' ? plinkoCapsules() : [];
+}
+
 // Capsules along the edges of each hit halo (note-coloured light around a note
 // would otherwise grow the note or show up as a ring-shaped note). The band
 // starts a little outside the note so it never cuts into it.
@@ -1055,7 +1195,7 @@ function uiCapsules() {
   const [tw, th] = TOAST_MASK.map((v) => v * sc);
   const out = [{ a: [w - tw + th / 2, th / 2], b: [w, th / 2], r: th / 2 }];
   const note = state.proj.notes.find((n) => n.id === (state.focus ?? state.highlight));
-  if (note) {
+  if (note && state.mode === 'beat') {
     const { cx, cy, side } = highlightBox(note.corners.map(([x, y]) => [x * w, y * h]), sc);
     const d = side / 2;
     const pts = [[cx - d, cy - d], [cx + d, cy - d], [cx + d, cy + d], [cx - d, cy + d]];
@@ -1083,7 +1223,7 @@ function noteOccludedByBall(corners) {
   const { w, h } = state.proj;
   const dx = state.settings.noteShiftX;
   const c = centroid(corners.map(([x, y]) => [(x + dx) * w, y * h]));
-  return ballCapsules().some((cap) => distToSegment(c, cap.a, cap.b) < cap.r);
+  return ballMask().some((cap) => distToSegment(c, cap.a, cap.b) < cap.r);
 }
 
 function distToSegment([x, y], [ax, ay], [bx, by]) {
@@ -1100,7 +1240,7 @@ function detectOnce() {
   if (!w || !h || els.video.readyState < 2) return;
   const calib = activeCalib();
   try {
-    state.blockers = calib ? toCamBlockers(calib, [...ballCapsules(), ...haloCapsules(), ...uiCapsules()]) : [];
+    state.blockers = calib ? toCamBlockers(calib, [...ballMask(), ...haloCapsules(), ...uiCapsules()]) : [];
     const res = state.detector.process(els.video, w, h, state.settings, {
       maskCanvas: els.mask,
       roi: calib && state.settings.roiOnly ? screenQuadInCamera(calib) : null,
@@ -1248,6 +1388,7 @@ function renderStatus() {
     `Projector:  ${Date.now() - state.projSeen < 3000 ? `<span class="ok">connected</span> (${state.proj.w}×${state.proj.h})` : '<span class="warn">not connected</span> - open projector.html'}`,
     `Calibrated: ${calibStatus(w, h)}`,
     `Sound:      ${soundReady() ? '<span class="ok">on</span>' : '<span class="warn">off</span> - click anywhere on this page to enable'}`,
+    `Mode:       ${state.mode}${state.plinko && state.mode === 'plinko' ? ` · score ${state.plinko.score} · ${state.plinko.balls.length} ball(s)` : ''}`,
     `Beat:       ${engine.running ? '<span class="ok">running</span>' : 'stopped'} · ${engine.bpm} BPM · ${engine.lanes.length} lane(s)`,
     `Notes:      ${state.proj.notes.length} in play, ${state.tracker ? state.tracker.tentative().length : 0} pending, ${d ? d.notes.length : 0} detected this frame${els.freezeNotes.checked ? ' <span class="warn">(frozen)</span>' : ''}`,
   ];

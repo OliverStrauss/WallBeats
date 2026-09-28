@@ -39,6 +39,7 @@ export function keyAction({ key, code, shift }) {
     case 'z': return { action: 'undoKeep', cap: 'Z' };
     case 'r': return { action: 'reset', cap: 'R' };
     case 'f': return { action: 'fullscreen', cap: 'F' };
+    case 'm': return { action: 'menu', cap: 'M' };
     default: return null;
   }
 }
@@ -58,5 +59,6 @@ export const KEY_HELP = [
   ['1–6 ⇧1–6', 'mute / solo a colour'],
   ['R', 'reset balls'],
   ['F', 'fullscreen (projector)'],
+  ['M', 'game menu'],
   ['?', 'this help'],
 ];

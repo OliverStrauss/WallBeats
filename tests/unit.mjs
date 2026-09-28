@@ -9,6 +9,7 @@ import { NOTE_COLORS, classifyColor } from '../js/colors.js';
 import { buildLanes, spanAt, rateLabel, noteAt, oneWay, laneLabel } from '../js/lanes.js';
 import { InstrumentRing } from '../js/ring.js';
 import { INSTRUMENTS } from '../js/instruments.js';
+import { Plinko, SLOT_VALUES } from '../js/plinko.js';
 import { BeatEngine, ballProgress, ballY, clockPos, ghostPos, ballShown } from '../js/beat.js';
 
 const require = createRequire(import.meta.url);
@@ -682,6 +683,41 @@ test('snapToDot: ignores the calibration border (too big / touches edge)', () =>
 test('snapToDot: no contrast -> null', () => {
   const img = fakeImage(40, 40, () => 90);
   assert.equal(snapToDot(img, 0, 0, [20, 20], 400), null);
+});
+
+// ------------------------------------------------------------------ plinko
+
+test('plinko: every dropped ball lands in a slot and scores once', () => {
+  const p = new Plinko({ aspect: 16 / 9 });
+  for (let i = 0; i < 12; i++) p.drop(0.1 + (i * 1.6) / 12);
+  let slots = 0;
+  for (let i = 0; i < 60 * 10; i++) slots += p.step(1 / 60).filter((e) => e.kind === 'slot').length;
+  assert.equal(slots, 12);
+  assert.ok(p.score >= 12 * Math.min(...SLOT_VALUES) && p.score <= 12 * Math.max(...SLOT_VALUES));
+  assert.equal(p.balls.length, 0, 'resting balls fade out');
+});
+
+test('plinko: no straight channel - every x meets a peg within two rows', () => {
+  const p = new Plinko({ aspect: 16 / 9 });
+  const rows = [...new Set(p.pegs.map((q) => q.y))].slice(0, 2);
+  for (let x = 0.05; x < p.A - 0.05; x += 0.002) {
+    assert.ok(p.pegs.some((q) => rows.includes(q.y) && Math.abs(q.x - x) < 0.007 + p.r), `open channel at x=${x.toFixed(3)}`);
+  }
+});
+
+test('plinko: a note removes pegs under it and balls never touch its paper', () => {
+  const p = new Plinko({ aspect: 1 });
+  const all = p.pegs.length;
+  const note = { id: 7, color: 'red', corners: square(0.5, 0.5, 0.2) };
+  p.setNotes([note]);
+  assert.ok(p.pegs.length < all);
+  p.drop(0.5);
+  let hit = false;
+  for (let i = 0; i < 240; i++) {
+    hit ||= p.step(1 / 60).some((e) => e.kind === 'note' && e.noteId === 7);
+    for (const b of p.balls) assert.ok(!(Math.abs(b.x - 0.5) < 0.2 + p.r && Math.abs(b.y - 0.5) < 0.2 + p.r - 0.002), 'ball inside note');
+  }
+  assert.ok(hit, 'ball bounced off the note');
 });
 
 // ------------------------------------------------------------------ runner

@@ -21,6 +21,8 @@
 //   echo    { bars, playheadStep, rows: [{ pitch, color, hits: [{ step, v, kept }] }] }  ~4 Hz
 //   ring    { open: true, noteId, choices, index, deadline, timeout } | { open: false }
 //   toast   { key, text }                shown for 1 s
+//   mode    { mode: 'menu'|'beat'|'plinko', menu: { index } }
+//   plinko  Plinko.view() (see plinko.js)  ~60 Hz while plinko is on
 //   hitFx   { noteId, color, at }        sent when scheduled (~100 ms early);
 //                                        the halo starts at `at`
 //

@@ -4,6 +4,22 @@ As a warning i have 0 musical background or prowess, so the interface makes sens
 Watch the working demo here: (https://www.youtube.com/watch?v=X_fnuMzRjMM)
 
 (Claude generated summary)
+
+## Games
+
+The wall opens on a Wii-style menu. Pick a game with **← →** and **Enter**,
+by clicking a tile on the wall, or with the **Game** dropdown in the control
+window. **M** (either window) returns to the menu.
+
+- **Beat wall**: the sticky-note beat instrument described below.
+- **Plinko**: **← →** aim, **Space** (or a click on the wall) drops a ball,
+  **R** resets the score. Sticky notes become bouncy bumpers that play their
+  pitch; pegs under a note are removed so no light lands on the paper.
+  Physics lives in `js/plinko.js` and runs in the control window.
+
+To add a game: add it to `GAMES` in `js/render.js`, draw it in `drawScene`,
+and route its keys in `runAction` in `js/control.js`.
+
 ## How to play
 
 
@@ -58,6 +74,7 @@ Watch the working demo here: (https://www.youtube.com/watch?v=X_fnuMzRjMM)
 | 1–6 | Mute a colour (purple … red); ⇧1–6 solos it |
 | R | Reset balls (1 per lane, on the downbeat) |
 | F | Fullscreen (projector) |
+| M | Game menu |
 | ? | Show the keys on the wall |
 
 Every key shows a short toast in the top-right corner of the wall.

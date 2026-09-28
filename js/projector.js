@@ -22,6 +22,9 @@ const state = {
   echo: null,
   ring: null,
   toast: null,
+  mode: 'menu',
+  menu: { index: 0 },
+  plinko: null,
   halos: [], // [{ noteId, color, at }]
   hitLog: [], // epoch s when each halo started (tests)
   lastControl: 0,
@@ -53,6 +56,13 @@ function onMessage(msg) {
       break;
     case 'ring':
       state.ring = msg.open ? msg : null;
+      break;
+    case 'mode':
+      state.mode = msg.mode;
+      state.menu = msg.menu;
+      break;
+    case 'plinko':
+      state.plinko = msg;
       break;
     case 'toast':
       state.toast = { key: msg.key, text: msg.text, at: epochNow() };
@@ -149,6 +159,9 @@ function frame() {
     ring: state.ring,
     toast: state.toast,
     halos: state.halos,
+    mode: state.mode,
+    menu: state.menu,
+    plinko: state.plinko,
     now: epochNow(),
   });
   requestAnimationFrame(frame);

@@ -77,6 +77,13 @@ try {
   await ctl.goto(`${base}/control.html`);
   await ctl.waitForFunction(() => document.getElementById('status').innerText.includes('ready'), null, { timeout: 60000 });
 
+  console.log('menu');
+  await sleep(300);
+  check((await proj.evaluate(() => window.stickyWall.state.mode)) === 'menu', 'starts on the game menu');
+  await proj.screenshot({ path: path.join(OUT, '0-menu-projector.png') });
+  await ctl.selectOption('#modeSelect', 'beat');
+  check((await proj.evaluate(() => window.stickyWall.state.mode)) === 'beat', 'mode select switches the wall to the beat');
+
   console.log('camera');
   const options = await ctl.$$eval('#cameraSelect option', (os) => os.map((o) => o.value));
   check(options.includes('sim'), 'camera picker lists the simulated wall');
@@ -316,6 +323,27 @@ try {
   await ctl.click('#undoBtn');
   await sleep(200);
   check((await ctl.evaluate(() => window.stickyWall.engine.layers.length)) === 0, 'Undo keep button removes it');
+
+  console.log('plinko');
+  await proj.keyboard.press('m');
+  await sleep(200);
+  check((await ctl.evaluate(() => window.stickyWall.state.mode)) === 'menu', 'M on the projector opens the menu');
+  await proj.keyboard.press('ArrowRight');
+  await proj.keyboard.press('Enter');
+  await sleep(200);
+  check((await ctl.evaluate(() => window.stickyWall.state.mode)) === 'plinko', '→ ↵ in the menu starts plinko');
+  check(!(await ctl.evaluate(() => window.stickyWall.engine.running)), 'leaving the beat stops its clock');
+  for (let i = 0; i < 5; i++) {
+    await proj.keyboard.press(i % 2 ? 'ArrowLeft' : 'ArrowRight');
+    await proj.keyboard.press(' ');
+    await sleep(150);
+  }
+  await sleep(500);
+  await proj.screenshot({ path: path.join(OUT, '6-plinko-projector.png') });
+  await sleep(3500);
+  const pk = await ctl.evaluate(() => ({ score: window.stickyWall.state.plinko.score, dropped: window.stickyWall.state.plinko.dropped, notes: window.stickyWall.state.proj.notes.length }));
+  check(pk.dropped === 5 && pk.score >= 5, `plinko balls drop and score (${pk.dropped} dropped, score ${pk.score})`);
+  check(pk.notes === 0, `plinko balls are never detected as notes (${pk.notes})`);
 
   check(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 } finally {

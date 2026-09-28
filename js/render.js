@@ -57,6 +57,9 @@ const white = (a) => `rgba(255,255,255,${a})`;
  * @param scene.echo      'echo' message or null
  * @param scene.toast     { key, text, at } or null
  * @param scene.now       s, epoch clock (see beat.js epochNow)
+ * @param scene.mode      'menu' | 'beat' | 'plinko' (missing = beat)
+ * @param scene.menu      { index } selected menu tile
+ * @param scene.plinko    Plinko.view() (see plinko.js)
  */
 export function drawScene(ctx, w, h, scene) {
   ctx.save();
@@ -75,9 +78,14 @@ export function drawScene(ctx, w, h, scene) {
 
   if (scene.calib) {
     drawCalibration(ctx, w, h);
+  } else if (scene.mode === 'menu') {
+    drawMenu(ctx, w, h, scene);
+  } else if (scene.mode === 'plinko') {
+    if (scene.plinko) drawPlinko(ctx, w, h, scene);
   } else if (scene.beat) {
     drawBeat(ctx, w, h, scene);
   }
+  if (scene.mode && scene.mode !== 'beat' && scene.toast && scene.now - scene.toast.at < 1) drawToast(ctx, w, h, scene.toast);
 
   if (scene.cross) {
     const [cx, cy] = [scene.cross[0] * w, scene.cross[1] * h];
@@ -270,7 +278,18 @@ function drawBeat(ctx, w, h, scene) {
     }
   }
 
-  // hit halos
+  drawHalos(ctx, w, h, scene, notes);
+
+  if (scene.ring?.open) drawRing(ctx, w, h, scene.ring, notes.get(scene.ring.noteId), now);
+  if (scene.echo) drawEcho(ctx, w, h, scene.echo, b, pos);
+  if (scene.toast && now - scene.toast.at < 1) drawToast(ctx, w, h, scene.toast);
+  if (b.overlay) drawHelp(ctx, w, h);
+}
+
+function drawHalos(ctx, w, h, scene, notes) {
+  const s = refScale(w, h);
+  const now = scene.now;
+  const px = (p) => [p[0] * w, p[1] * h];
   for (const halo of scene.halos || []) {
     const age = (now - halo.at) * 1000;
     const note = notes.get(halo.noteId);
@@ -288,11 +307,6 @@ function drawBeat(ctx, w, h, scene) {
     ctx.stroke();
     ctx.restore();
   }
-
-  if (scene.ring?.open) drawRing(ctx, w, h, scene.ring, notes.get(scene.ring.noteId), now);
-  if (scene.echo) drawEcho(ctx, w, h, scene.echo, b, pos);
-  if (scene.toast && now - scene.toast.at < 1) drawToast(ctx, w, h, scene.toast);
-  if (b.overlay) drawHelp(ctx, w, h);
 }
 
 /** Square highlight box around a note (px corners): centre and side, px. */
@@ -492,3 +506,218 @@ function drawHelp(ctx, w, h) {
   ctx.restore();
 }
 
+// ---------------------------------------------------------------- game menu
+// Wii-style channel grid. Empty tiles are slots for future games.
+
+export const GAMES = [
+  { id: 'beat', name: 'BEAT WALL', blurb: 'sticky notes make music' },
+  { id: 'plinko', name: 'PLINKO', blurb: 'drop balls, notes are bumpers' },
+];
+const MENU_COLS = 4;
+const MENU_ROWS = 3;
+
+/** Menu tile rects, projector-normalized [{ x, y, w, h }], row by row. */
+export function menuTiles(w, h) {
+  const s = refScale(w, h);
+  const pad = 28 * s;
+  const gx = 110 * s;
+  const top = 90 * s;
+  const bottom = h - 170 * s;
+  const tw = (w - 2 * gx - (MENU_COLS - 1) * pad) / MENU_COLS;
+  const th = (bottom - top - (MENU_ROWS - 1) * pad) / MENU_ROWS;
+  const out = [];
+  for (let r = 0; r < MENU_ROWS; r++) {
+    for (let c = 0; c < MENU_COLS; c++) out.push({ x: (gx + c * (tw + pad)) / w, y: (top + r * (th + pad)) / h, w: tw / w, h: th / h });
+  }
+  return out;
+}
+
+function drawMenu(ctx, w, h, scene) {
+  const s = refScale(w, h);
+  const sel = scene.menu?.index ?? 0;
+  const pulse = 0.5 + 0.5 * Math.sin(scene.now * 4);
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  menuTiles(w, h).forEach((t, i) => {
+    const game = GAMES[i];
+    const on = i === sel && game;
+    const grow = on ? 8 * s : 0;
+    const [x, y, tw, th] = [t.x * w - grow, t.y * h - grow, t.w * w + 2 * grow, t.h * h + 2 * grow];
+    ctx.save();
+    if (on) {
+      ctx.shadowColor = '#fff';
+      ctx.shadowBlur = (18 + 14 * pulse) * s;
+    }
+    ctx.fillStyle = white(game ? 0.07 : 0.025);
+    ctx.strokeStyle = white(on ? 1 : game ? 0.45 : 0.12);
+    ctx.lineWidth = (on ? 4 : 2) * s;
+    roundRect(ctx, x, y, tw, th, 22 * s);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+    if (!game) return;
+    drawGameIcon(ctx, game.id, x + tw / 2, y + th * 0.4, Math.min(tw, th) * 0.28, scene.now);
+    ctx.fillStyle = white(on ? 1 : 0.75);
+    ctx.font = `bold ${Math.round(20 * s)}px ${MONO}`;
+    ctx.fillText(game.name, x + tw / 2, y + th * 0.78);
+    ctx.fillStyle = white(0.5);
+    ctx.font = `${Math.round(12 * s)}px ${MONO}`;
+    ctx.fillText(game.blurb, x + tw / 2, y + th * 0.9);
+  });
+  // bottom bar: big clock like the Wii, hint underneath
+  const d = new Date(scene.now * 1000);
+  ctx.fillStyle = white(0.9);
+  ctx.font = `${Math.round(54 * s)}px ${MONO}`;
+  ctx.fillText(d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), w / 2, h - 100 * s);
+  ctx.fillStyle = white(0.5);
+  ctx.font = `${Math.round(15 * s)}px ${MONO}`;
+  ctx.fillText(`${d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}  ·  ← → choose  ·  ↵ or click to play  ·  M back here`, w / 2, h - 50 * s);
+  ctx.restore();
+}
+
+function drawGameIcon(ctx, id, cx, cy, R, now) {
+  ctx.save();
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = white(0.8);
+  ctx.lineWidth = Math.max(1, R * 0.04);
+  if (id === 'beat') {
+    // a note square with a ball bouncing on it
+    const bounce = Math.abs(Math.sin(now * 3));
+    ctx.strokeRect(cx - R * 0.35, cy + R * 0.35, R * 0.7, R * 0.5);
+    ctx.beginPath();
+    ctx.arc(cx, cy + R * 0.2 - bounce * R * 0.9, R * 0.14, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (id === 'plinko') {
+    // peg triangle with a ball zig-zagging down
+    for (let r = 0; r < 4; r++) {
+      for (let c = 0; c <= r; c++) {
+        ctx.beginPath();
+        ctx.arc(cx + (c - r / 2) * R * 0.45, cy - R * 0.6 + r * R * 0.4, R * 0.05, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    const t = (now * 0.6) % 1;
+    ctx.beginPath();
+    ctx.arc(cx + Math.sin(t * Math.PI * 4) * R * 0.2, cy - R * 0.9 + t * R * 1.8, R * 0.12, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- plinko
+
+function drawPlinko(ctx, w, h, scene) {
+  const p = scene.plinko;
+  const s = refScale(w, h);
+  const br = p.r * h;
+  ctx.save();
+
+  // aim: dropper arrow, ghost ball and a faint guide down to the first pegs
+  const ax = p.aim * w;
+  ctx.strokeStyle = white(0.15);
+  ctx.lineWidth = Math.max(1, s);
+  ctx.setLineDash([3 * s, 9 * s]);
+  ctx.beginPath();
+  ctx.moveTo(ax, 0.06 * h + br);
+  ctx.lineTo(ax, 0.18 * h);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.strokeStyle = white(0.7);
+  ctx.lineWidth = 2 * s;
+  ctx.beginPath();
+  ctx.arc(ax, 0.06 * h, br, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.moveTo(ax - 10 * s, 0.06 * h - br - 16 * s);
+  ctx.lineTo(ax + 10 * s, 0.06 * h - br - 16 * s);
+  ctx.lineTo(ax, 0.06 * h - br - 4 * s);
+  ctx.fill();
+
+  // pegs, glowing when hit
+  for (const [x, y, lit] of p.pegs) {
+    ctx.save();
+    if (lit > 0) {
+      ctx.shadowColor = '#fff';
+      ctx.shadowBlur = 20 * s * lit;
+    }
+    ctx.fillStyle = white(0.4 + 0.6 * lit);
+    ctx.beginPath();
+    ctx.arc(x * w, y * h, (0.007 * h) * (1 + 0.5 * lit), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // slots: dividers, floor, values; a slot flashes when a ball lands in it
+  const n = p.slots.length;
+  const sw = w / n;
+  const flash = new Array(n).fill(0);
+  for (const pop of p.popups) flash[Math.min(n - 1, Math.floor(pop.x * n))] = Math.max(flash[Math.floor(pop.x * n)] || 0, 1 - pop.age / 0.6);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i < n; i++) {
+    if (flash[i] > 0) {
+      ctx.fillStyle = white(0.18 * flash[i]);
+      ctx.fillRect(i * sw, p.slotTop * h, sw, (p.floor - p.slotTop) * h);
+    }
+    const big = p.slots[i] >= 25;
+    ctx.fillStyle = white(big ? 0.9 : 0.5);
+    ctx.font = `${big ? 'bold ' : ''}${Math.round((big ? 22 : 17) * s)}px ${MONO}`;
+    ctx.fillText(String(p.slots[i]), (i + 0.5) * sw, ((p.slotTop + p.floor) / 2) * h);
+  }
+  ctx.strokeStyle = white(0.5);
+  ctx.lineWidth = 3 * s;
+  ctx.beginPath();
+  for (let i = 1; i < n; i++) {
+    ctx.moveTo(i * sw, p.slotTop * h);
+    ctx.lineTo(i * sw, p.floor * h);
+  }
+  ctx.moveTo(0, p.floor * h);
+  ctx.lineTo(w, p.floor * h);
+  ctx.stroke();
+
+  drawHalos(ctx, w, h, scene, new Map((scene.notes || []).map((nt) => [nt.id, nt])));
+
+  // balls with a fading trail
+  for (const b of p.balls) {
+    const tr = b.trail.slice(-8);
+    tr.forEach(([x, y], i) => {
+      ctx.fillStyle = white((0.25 * b.a * (i + 1)) / tr.length);
+      ctx.beginPath();
+      ctx.arc(x * w, y * h, br * (0.4 + (0.5 * (i + 1)) / tr.length), 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.save();
+    ctx.shadowColor = '#fff';
+    ctx.shadowBlur = 24 * s;
+    ctx.fillStyle = white(b.a);
+    ctx.beginPath();
+    ctx.arc(b.x * w, b.y * h, br, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // "+25" popups rising out of the slot
+  for (const pop of p.popups) {
+    ctx.fillStyle = white(Math.max(0, 1 - pop.age / 1.2));
+    ctx.font = `bold ${Math.round((26 + 10 * Math.min(1, pop.age * 4)) * s)}px ${MONO}`;
+    ctx.fillText(pop.text, pop.x * w, (pop.y - pop.age * 0.06) * h);
+  }
+
+  // HUD: score top-left, controls top-centre (top-right is the toast)
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = white(0.55);
+  ctx.font = `${Math.round(13 * s)}px ${MONO}`;
+  ctx.fillText('PLINKO · SCORE', 24 * s, 20 * s);
+  ctx.fillStyle = '#fff';
+  ctx.font = `bold ${Math.round(40 * s)}px ${MONO}`;
+  ctx.fillText(String(p.score), 24 * s, 38 * s);
+  ctx.fillStyle = white(0.55);
+  ctx.font = `${Math.round(13 * s)}px ${MONO}`;
+  ctx.fillText(`BALLS ${p.dropped}${p.dropped ? ` · AVG ${(p.score / p.dropped).toFixed(1)}` : ''}`, 24 * s, 84 * s);
+  ctx.fillStyle = white(0.4);
+  ctx.fillText('← → aim · SPACE drop · R reset · M menu', 24 * s, 104 * s);
+  ctx.restore();
+}
