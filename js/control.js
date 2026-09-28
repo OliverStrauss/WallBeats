@@ -564,7 +564,7 @@ function gameCapsules() {
   const g = miniGame();
   if (!g) return [];
   const { h } = state.proj;
-  return g.mask().map(({ a, b, r }) => ({ a: [a[0] * h, a[1] * h], b: [b[0] * h, b[1] * h], r: r * h * state.settings.ballPad }));
+  return g.mask().map(({ a, b, r, soft }) => ({ a: [a[0] * h, a[1] * h], b: [b[0] * h, b[1] * h], r: r * h * state.settings.ballPad, soft }));
 }
 
 for (const g of GAMES) $('modeSelect').add(new Option(g.name[0] + g.name.slice(1).toLowerCase(), g.id));
@@ -1380,7 +1380,7 @@ function noteOccludedByBall(corners) {
   const { w, h } = state.proj;
   const dx = state.settings.noteShiftX;
   const c = centroid(corners.map(([x, y]) => [(x + dx) * w, y * h]));
-  return ballMask().some((cap) => distToSegment(c, cap.a, cap.b) < cap.r);
+  return ballMask().some((cap) => !cap.soft && distToSegment(c, cap.a, cap.b) < cap.r); // soft capsules never cut a note
 }
 
 function distToSegment([x, y], [ax, ay], [bx, by]) {
@@ -1397,11 +1397,15 @@ function detectOnce() {
   if (!w || !h || els.video.readyState < 2) return;
   const calib = activeCalib();
   try {
-    state.blockers = calib ? toCamBlockers(calib, [...ballMask(), ...haloCapsules(), ...uiCapsules()]) : [];
+    const caps = [...ballMask(), ...haloCapsules(), ...uiCapsules()];
+    const hard = calib ? toCamBlockers(calib, caps.filter((c) => !c.soft)) : [];
+    const soft = calib ? toCamBlockers(calib, caps.filter((c) => c.soft)) : [];
+    state.blockers = [...hard, ...soft];
     const res = state.detector.process(els.video, w, h, state.settings, {
       maskCanvas: els.mask,
       roi: calib && state.settings.roiOnly ? screenQuadInCamera(calib) : null,
-      blockers: state.blockers,
+      blockers: hard,
+      softBlockers: soft,
     });
     state.lastDetect = res;
     if (!calib || state.calibrating || els.freezeNotes.checked) return;

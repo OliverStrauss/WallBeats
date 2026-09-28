@@ -74,7 +74,7 @@ class Game {
     this.press();
   }
   tab() {}
-  /** Mask capsules { a, b, r } (world units) over moving light, for vision. */
+  /** Mask capsules { a, b, r, soft? } (world units) over moving light, for vision. */
   mask() {
     return [];
   }
@@ -290,7 +290,8 @@ class Laser extends Game {
 
   /** Vision mask over the coloured light: beam, target rings, locks. */
   mask() {
-    const out = this.beams.map((s) => ({ a: s.pts[0], b: s.pts[1], r: 0.004 })); // × ballPad, still inside the gap
+    // soft: a note dropped across the beam is still seen whole (vision.js softBlockers)
+    const out = this.beams.map((s) => ({ a: s.pts[0], b: s.pts[1], r: 0.004, soft: true })); // × ballPad, still inside the gap
     for (const t of this.lv.targets) out.push({ a: t.p, b: t.p, r: TARGET_R * 0.75 });
     for (const l of this.lv.locks) out.push({ a: l.a, b: l.b, r: 0.006 });
     return out;

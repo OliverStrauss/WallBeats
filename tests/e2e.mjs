@@ -390,6 +390,24 @@ try {
   });
   check(lz.notes === 'filter' && lz.lit, `a red strip is a filter and lights the red target (${JSON.stringify(lz)})`);
   await ctl.uncheck('#simTint');
+  // a note dropped across the beam, or moved onto it, is seen whole and stops it (the beam's mask never splits a note)
+  await ctl.evaluate(() => window.stickyWall.state.games.laser.tab(-99));
+  const onBeam = async () => {
+    await sleep(2500);
+    return ctl.evaluate(() => {
+      const g = window.stickyWall.state.games.laser;
+      return { notes: g.notes.length, end: +g.beams[0].pts[1][0].toFixed(3) };
+    });
+  };
+  await ctl.evaluate(() => window.stickyWall.state.sim.setNotes([{ cx: 0.4, cy: 0.8, color: 'green' }]));
+  const dropped = await onBeam();
+  check(dropped.notes === 1 && dropped.end < 0.4 * 16 / 9, `a note dropped on the beam is detected and stops it (${JSON.stringify(dropped)})`);
+  await ctl.evaluate(() => window.stickyWall.state.sim.setNotes([{ cx: 0.4, cy: 0.6, color: 'green' }]));
+  await sleep(2500);
+  await ctl.evaluate(() => { const sim = window.stickyWall.state.sim; sim.notes[0].cy = 0.8; sim.dirty = true; });
+  const shifted = await onBeam();
+  check(shifted.notes === 1 && shifted.end < 0.4 * 16 / 9, `a note moved onto the beam is followed and stops it (${JSON.stringify(shifted)})`);
+  await proj.screenshot({ path: path.join(OUT, '8c-laser-cut.png') });
 
   check(errors.length === 0, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 } finally {
