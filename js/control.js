@@ -12,7 +12,7 @@ import { buildLanes, noteAt, laneLabel } from './lanes.js';
 import { InstrumentRing } from './ring.js';
 import { INSTRUMENTS } from './instruments.js';
 import { BeatEngine, epochNow, clockPos, ballY, ghostPos } from './beat.js';
-import { ballRadiusN, ballGapN, refScale, inflate, highlightBox, HALO_MS, HALO_MASK, HIGHLIGHT_MASK, TOAST_MASK, BALL_R, BALL_GAP, gridLevel, GAMES, menuTiles } from './render.js';
+import { ballRadiusN, ballGapN, refScale, inflate, highlightBox, HALO_MS, HALO_MASK, HIGHLIGHT_MASK, TOAST_MASK, BALL_R, BALL_GAP, gridLevel, GAMES, menuTiles, echoBandH } from './render.js';
 import { keyAction } from './keys.js';
 import { Plinko } from './plinko.js';
 
@@ -1188,12 +1188,17 @@ function haloCapsules(now = epochNow()) {
 }
 
 // Capsules along the white highlight box (the camera can see its stroke as a
-// note) and one fat capsule over the top-right toast corner.
+// note), one fat capsule over the top-right toast corner, and a band over the
+// echo strip (its ticks are note-coloured and as big as a small note).
 function uiCapsules() {
   const { w, h } = state.proj;
   const sc = refScale(w, h);
   const [tw, th] = TOAST_MASK.map((v) => v * sc);
   const out = [{ a: [w - tw + th / 2, th / 2], b: [w, th / 2], r: th / 2 }];
+  if (state.proj.echo && state.mode === 'beat') {
+    const band = echoBandH(state.proj.echo.rows?.length || 1) * sc;
+    out.push({ a: [0, h - band / 2], b: [w, h - band / 2], r: band / 2 });
+  }
   const note = state.proj.notes.find((n) => n.id === (state.focus ?? state.highlight));
   if (note && state.mode === 'beat') {
     const { cx, cy, side } = highlightBox(note.corners.map(([x, y]) => [x * w, y * h]), sc);

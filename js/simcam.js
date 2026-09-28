@@ -30,7 +30,7 @@ const COLORS = NOTE_COLORS.map((c) => c.rgb);
 const VW = 1600;
 const VH = 900;
 
-function makeNote(cx, cy, angleDeg, colorIdx, size = 125) {
+function makeNote(cx, cy, angleDeg, colorIdx, size = 25) {
   return { cx, cy, angle: (angleDeg * Math.PI) / 180, size, color: COLORS[colorIdx % COLORS.length] };
 }
 

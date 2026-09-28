@@ -397,6 +397,11 @@ export function gridLevel(step) {
   return step % 16 === 0 ? 3 : step % 4 === 0 ? 2 : step % 2 === 0 ? 1 : 0;
 }
 
+/** Height of the echo strip from the bottom edge (label to beat numbers), px at the reference size. */
+export function echoBandH(rows) {
+  return 28 + 10 * Math.max(1, rows) + 30;
+}
+
 function drawEcho(ctx, w, h, echo, beat, pos) {
   const s = refScale(w, h);
   const x0 = 190 * s;

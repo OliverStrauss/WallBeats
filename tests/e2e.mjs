@@ -179,7 +179,7 @@ try {
   // A clean wall: a pair (blue over green, 2 x unit apart = 1/4 between
   // hits, from the blue note's row 1/8) plus a lone note far off to the side
   // on row 3/8: it plays 3/8 into the bar, on the pair's grid.
-  const NOTE = 90; // px at 1600x900: 0.1 of the projector height
+  const NOTE = 25; // px at 1600x900: real sticky notes are small on the wall
   const half = NOTE / 2 / 900;
   const S = await ctl.evaluate(() => window.stickyWall.state.settings);
   const targetTop = 0.2 + 2 * S.unit;
